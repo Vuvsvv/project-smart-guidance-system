@@ -68,7 +68,7 @@ def get_active_dept_names() -> list[str]:
 
 # ─────────────────────────────────────────
 # 4. 判斷科別
-#    把「有醫師的科別清單」+ 問題 一起丟給 AI
+#    把「科別清單」+ 問題 一起丟給 AI
 #    AI 直接從清單裡選，不用模糊比對
 #    這樣回傳的科別名稱一定是資料庫裡有的
 # ─────────────────────────────────────────
@@ -102,7 +102,7 @@ def identify_department(symptom: str) -> dict:
 
         # 確認 AI 選的科別真的在清單裡（防止 AI 亂改名稱）
         if dept_name not in dept_list:
-            print(f"  ⚠️ AI 選的科別「{dept_name}」不在清單裡，嘗試模糊比對...")
+            print(f"   AI 選的科別「{dept_name}」不在清單裡，嘗試模糊比對...")
             matched = [d for d in dept_list if dept_name in d or d in dept_name]
             if matched:
                 dept_name = matched[0]
@@ -113,7 +113,7 @@ def identify_department(symptom: str) -> dict:
         return {"dept_name": dept_name, "urgency": urgency, "reason": reason}
 
     except json.JSONDecodeError:
-        print(f"  ⚠️ JSON 解析失敗")
+        print(f"   JSON 解析失敗")
         return {"dept_name": "", "urgency": "low", "reason": ""}
 
 # ─────────────────────────────────────────
@@ -150,7 +150,7 @@ def process_query(user_input: str) -> dict:
                 "doctor": "", "date": "", "session": "", "urgency": "low"
             },
             "script": [],
-            "message": "無法判斷科別，請向櫃台詢問"
+            "message": "無法判斷科別"
         }
 
     # 科別判斷成功
