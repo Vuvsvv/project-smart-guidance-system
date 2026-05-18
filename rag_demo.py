@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 import pyodbc
 from dotenv import load_dotenv
 from llama_index.core import Settings
@@ -39,7 +40,7 @@ def get_db_connection():
     )
 
 # ─────────────────────────────────────────
-# 3. 載入「有醫師的科別」清單（快取）
+# 3. 載入科別清單（快取）
 # ─────────────────────────────────────────
 _dept_list_cache = None
 
@@ -58,143 +59,259 @@ def get_active_dept_names() -> list[str]:
         rows = cursor.fetchall()
         conn.close()
         _dept_list_cache = [row[0] for row in rows]
-        print(f"科別清單載入完成（共 {len(_dept_list_cache)} 個科別）：")
-        for dept in _dept_list_cache:
-            print(f"  - {dept}")
+        print(f"科別清單載入完成（共 {len(_dept_list_cache)} 個科別）")
         return _dept_list_cache
     except Exception as e:
         print(f"載入科別失敗：{e}")
         return []
 
 # ─────────────────────────────────────────
-# 4. 判斷科別
-#    把「科別清單」+ 問題 一起丟給 AI
-#    AI 直接從清單裡選，不用模糊比對
-#    這樣回傳的科別名稱一定是資料庫裡有的
+# 4. 第一段：收集症狀（AI 追問）
+#
+#    輸入：ChatRequest
+#      - message：使用者這次說的話
+#      - triage_case：之前的病歷（第一次傳入時為 None）
+#
+#    輸出：TriageResult
+#      - needMoreInfo: true  → AI 還要繼續問
+#      - needMoreInfo: false → 資料夠了，可以讓使用者確認
 # ─────────────────────────────────────────
-def identify_department(symptom: str) -> dict:
-    dept_list = get_active_dept_names()
-    dept_list_str = "\n".join([f"- {d}" for d in dept_list])
+def collect_symptoms(chat_request: dict) -> dict:
+    """
+    第一段：收集症狀
+    每次使用者說話，AI 更新 patient_input 並決定要不要繼續追問
+    """
+    message = chat_request.get("message", "")
+    triage_case = chat_request.get("triage_case")
 
-    prompt = f"""你是台北榮民總醫院的分診助理。
+    # ── 建立或沿用病歷 ──
+    if triage_case is None:
+        # 初診：建立全新病歷
+        case_id = str(uuid.uuid4())[:8].upper()
+        triage_case = {
+            "case_id": case_id,
+            "history_records": [],
+            "patient_input": {
+                "symptom": "",
+                "body_part": None,
+                "duration": None,
+                "severity": None,
+                "onset": None,
+                "accompanying_symptoms": [],
+                "red_flags": []
+            },
+            "availability": {
+                "preferred_days": [],
+                "preferred_sessions": [],
+                "can_take_leave": False
+            },
+            "preferences": {
+                "specialty_priority": True,
+                "doctor_preference": "不限",
+                "hospital_preference": "台北榮總"
+            },
+            "triage": {
+                "urgency_score": None,
+                "urgency_level": None,
+                "warning_required": False,
+                "warning_message": None,
+                "need_more_info": True,
+                "next_question": None
+            },
+            "conversation_state": {
+                "stage": "collecting",
+                "is_complete": False
+            },
+            "department_result": None
+        }
+        print(f"  建立新病歷：{case_id}")
+    else:
+        print(f"  沿用病歷：{triage_case.get('case_id')}")
 
-以下是本院目前可掛號的科別清單：
-{dept_list_str}
+    # ── 把使用者說的話加進對話紀錄 ──
+    triage_case["history_records"].append({
+        "role": "user",
+        "content": message
+    })
 
-病患描述：{symptom}
+    # ── 組對話歷史給 AI 看 ──
+    history_str = ""
+    for msg in triage_case["history_records"]:
+        role_label = "使用者" if msg["role"] == "user" else "助理"
+        history_str += f"{role_label}：{msg['content']}\n"
 
-請從上方科別清單中選出最適合的一個，並輸出以下 JSON，不要輸出任何其他文字：
+    # ── 現有的 patient_input ──
+    current_input = triage_case["patient_input"]
+
+    # ── 呼叫 AI 更新 patient_input、判斷急迫性、決定要不要繼續問 ──
+    prompt = f"""你是台北榮民總醫院的分診助理，正在透過對話收集病患症狀。
+
+目前對話紀錄：
+{history_str}
+
+目前已收集到的症狀資料：
+{json.dumps(current_input, ensure_ascii=False, indent=2)}
+
+你的任務：
+1. 根據對話更新症狀資料
+2. 每次都要判斷急迫程度（紅旗制度）：
+   - high（立即急診）：心臟劇烈疼痛、呼吸困難、昏迷、大量出血、中風症狀（臉歪手麻說話不清）、嚴重過敏
+   - medium（盡快就醫）：持續高燒、持續嘔吐、劇烈頭痛、視力突然喪失、骨折疑似
+   - low（一般門診）：其他慢性或輕微症狀
+3. 判斷資料是否足夠（至少要有 symptom + body_part + duration + serverity(詢問，讓使用者回答症狀輕微、中等、還是劇烈？) + onset + accompanying_symptoms）
+4. 如果不夠，提出下一個最重要的問題
+5. 如果已經足夠，把 is_complete 設為 true
+
+注意：
+- red_flags 填入觸發高急迫的症狀描述（沒有就空陣列）
+- 問題要用白話，讓長輩聽得懂
+- 每次只問一個問題，回答過的問題就不用重複問
+- 如果是 high 急迫，立刻設 is_complete 為 true 並告知請去急診
+
+請輸出以下 JSON，不要輸出任何其他文字：
 {{
-  "dept_name": "從清單中選出的科別名稱（必須完全一樣，不能自己改）",
-  "urgency": "high 或 low（high 只用在：昏迷、大量出血、呼吸困難、心跳停止）",
-  "reason": "一句話說明為什麼選這個科別"
+  "patient_input": {{
+    "symptom": "主要症狀描述",
+    "body_part": "哪個部位或 null",
+    "duration": "持續多久或 null",
+    "severity": "嚴重程度或 null",
+    "onset": "怎麼開始的或 null",
+    "accompanying_symptoms": ["伴隨症狀列表"],
+    "red_flags": ["危險警訊列表，例如：胸口劇痛"]
+  }},
+  "triage": {{
+    "urgency_score": 數字（low=20, medium=50, high=90）,
+    "urgency_level": "low 或 medium 或 high",
+    "warning_required": true 或 false,
+    "warning_message": "警告訊息或 null",
+    "need_more_info": true 或 false,
+    "next_question": null
+  }},
+  "conversation_state": {{
+    "stage": "collecting",
+    "is_complete": true 或 false
+  }},
+  "reply": "對使用者說的話（如果還要繼續問就是下一個問題，如果完成就是確認訊息）"
 }}"""
 
     llm = Settings.llm
     response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
-    print(f"  → AI 回答：{response}")
+    print(f"  AI 回應：{response}")
 
     try:
-        result = json.loads(response)
-        dept_name = result.get("dept_name", "")
-        urgency = result.get("urgency", "low")
-        reason = result.get("reason", "")
-
-        # 確認 AI 選的科別真的在清單裡（防止 AI 亂改名稱）
-        if dept_name not in dept_list:
-            print(f"   AI 選的科別「{dept_name}」不在清單裡，嘗試模糊比對...")
-            matched = [d for d in dept_list if dept_name in d or d in dept_name]
-            if matched:
-                dept_name = matched[0]
-                print(f"  → 修正為：{dept_name}")
-            else:
-                dept_name = ""
-
-        return {"dept_name": dept_name, "urgency": urgency, "reason": reason}
-
+        ai_result = json.loads(response)
     except json.JSONDecodeError:
-        print(f"   JSON 解析失敗")
-        return {"dept_name": "", "urgency": "low", "reason": ""}
-
-# ─────────────────────────────────────────
-# 5. 主要查詢流程
-# ─────────────────────────────────────────
-def process_query(user_input: str) -> dict:
-    print("  判斷科別中...")
-    dept_result = identify_department(user_input)
-    dept_name = dept_result.get("dept_name", "")
-    urgency = dept_result.get("urgency", "low")
-    reason = dept_result.get("reason", "")
-    print(f"  → 科別：{dept_name}，緊急：{urgency}，原因：{reason}")
-
-    # 急症
-    if urgency == "high":
-        return {
-            "isSuccess": True,
-            "data": {
-                "department_parent": "",
-                "department_child": "急診",
-                "doctor": "",
-                "date": "", "session": "", "urgency": "high"
-            },
-            "script": ["行動掛號", "繼續掛號", "急診", "填寫個人資料"],
-            "message": "請立即前往急診或撥打 119"
+        print("  JSON 解析失敗，使用預設值")
+        ai_result = {
+            "patient_input": current_input,
+            "conversation_state": {"stage": "collecting", "is_complete": False},
+            "reply": "抱歉，我沒聽清楚，可以再說一次嗎？"
         }
 
-    # 找不到科別
-    if not dept_name:
-        return {
-            "isSuccess": False,
-            "data": {
-                "department_parent": "", "department_child": "",
-                "doctor": "", "date": "", "session": "", "urgency": "low"
-            },
-            "script": [],
-            "message": "無法判斷科別"
-        }
+    # ── 更新 triage_case ──
+    triage_case["patient_input"] = ai_result.get("patient_input", current_input)
+    triage_case["conversation_state"] = ai_result.get("conversation_state", {
+        "stage": "collecting", "is_complete": False
+    })
+    # 每次都更新急迫性判斷
+    if "triage" in ai_result:
+        triage_case["triage"] = ai_result["triage"]
 
-    # 科別判斷成功
-    return {
-        "isSuccess": True,
-        "data": {
-            "department_parent": "",    # 待補
-            "department_child": dept_name,
-            "doctor": "",               # 待補
-            "date": "",                 # 待補
-            "session": "",              # 待補
-            "urgency": urgency
-        },
-        "script": [
-            "行動掛號",
-            "繼續掛號",
-            "依門診科別",
-            dept_name,
-            "選擇看診時間"
-            # 待補：日期、醫師姓名、填寫個人資料
-        ],
-        "message": f"AI 建議：{dept_name}\n原因：{reason}"
+    # ── 把 AI 的回應加進對話紀錄 ──
+    reply = ai_result.get("reply", "")
+    triage_case["history_records"].append({
+        "role": "assistant",
+        "content": reply
+    })
+
+    is_complete = triage_case["conversation_state"].get("is_complete", False)
+    # ── 組成 TriageResult 回傳 ──
+    triage_result = {
+        "case_id": triage_case["case_id"],
+        "triage_case": triage_case,           
+        "conversation_state": triage_case["conversation_state"],
+        "triage": triage_case["triage"],      
+        "department_result": None,             # 第一段不判斷科別，第二段才填
+        "next_question": None,
+        "reply": reply,                        # AI 這次說的話，前端顯示用
+        "needMoreInfo": not is_complete        # 給前端
     }
+    return triage_result
+
+    # # ── 組成 TriageResult 回傳 ──
+    # return {
+    #     "case_id": triage_case["case_id"],
+    #     "triage_case": triage_case,
+    #     "conversation_state": triage_case["conversation_state"],
+    #     "triage": triage_case["triage"],
+    #     "department_result": None,   # 第一段不判斷科別，等第二段
+    #     "reply": reply,
+    #     "needMoreInfo": not is_complete
+    # }
+
 
 # ─────────────────────────────────────────
-# 6. 主程式
+# 5. 主程式（模擬終端機對話）
 # ─────────────────────────────────────────
 def main():
     print("=" * 50)
-    print("  台北榮民醫院導引系統（科別判斷版）")
+    print("  台北榮民醫院導引系統 ")
     print("=" * 50)
 
     get_active_dept_names()
 
     print("\n進入互動模式（輸入 q 結束）\n")
+
+    triage_case = None  # 第一次為 None，之後沿用
+
     while True:
         user_input = input("請輸入您的問題：").strip()
         if user_input.lower() == "q":
             break
         if not user_input:
             continue
-        result = process_query(user_input)
+
+        # 組 ChatRequest
+        chat_request = {
+            "message": user_input,
+            "triage_case": triage_case
+        }
+
+        # 呼叫第一段
+        result = collect_symptoms(chat_request)
+
+        # 保存 triage_case 供下次使用
+        triage_case = result["triage_case"]
+
+        # 顯示結果
         print(json.dumps(result, ensure_ascii=False, indent=2))
         print()
+
+        # 模擬回傳後端再傳回前端的過程
+        if result["needMoreInfo"]:
+            print("─" * 50)
+            print(" 已回傳後端 → 後端轉傳給前端 → 前端顯示 AI 問題")
+            print(f"   AI 問題：{result['reply']}")
+            print("─" * 50)
+        
+        # 如果資料收集完成，提示可以進入第二段
+        if not result["needMoreInfo"]:
+            urgency = result["triage"].get("urgency_level", "low")
+            urgency_label = {"high": " 高（請立即急診）", "medium": " 中（盡快就醫）", "low": " 低（一般門診）"}.get(urgency, urgency)
+            print("─" * 50)
+            print(" 以下是包裝成 TriageResult 格式回傳後端的 JSON：")
+            print("─" * 50)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print("─" * 50)
+            print(f"  急迫程度：{urgency_label}")
+            print(f"  red_flags：{result['triage_case']['patient_input']['red_flags']}")
+            print("=" * 50)
+            print("  症狀收集完成！")
+            print("  使用者按確認 → triage_case 傳給後端 → 進行第二段")
+            print("=" * 50)
+            print()
+            # 重置，等待下一位病患
+            triage_case = None
 
 
 if __name__ == "__main__":
@@ -265,7 +382,7 @@ if __name__ == "__main__":
 #     conn = get_db_connection()
 #     cursor = conn.cursor()
 #     today = datetime.today().date()
-#     today_dow = today.weekday()  # 0=週一...6=週日
+#     today_dow = today.weekday()
 #
 #     cursor.execute("""
 #         SELECT
@@ -290,7 +407,6 @@ if __name__ == "__main__":
 #     if not rows:
 #         return {"date": "", "session": ""}
 #
-#     # 找最近的看診日
 #     best_date = None
 #     best_session = ""
 #     for row in rows:
@@ -304,30 +420,4 @@ if __name__ == "__main__":
 #             best_session = row[1]
 #
 #     return {"date": str(best_date), "session": best_session}
-
-
-# ── 接上醫師和班表後，process_query 裡補上這段 ──────────────
-#
-#     # 段二：查詢醫師
-#     doctors = get_doctors_by_dept(dept_name)
-#     if not doctors:
-#         return {"isSuccess": False, ...}
-#
-#     # 段三：選最適合醫師
-#     best_doctor = pick_best_doctor(user_input, doctors)
-#     doctor_name = best_doctor["name"]
-#     actual_dept = best_doctor["dept_name"]
-#
-#     # 段四：查班表
-#     schedule = get_schedule_from_db(doctor_name)
-#     date_str = schedule.get("date", "")
-#     session_str = schedule.get("session", "")
-#
-#     # script 補上醫師和日期
-#     day_label = date_str.split("-")[-1] + "日" if date_str else ""
-#     script = ["行動掛號", "繼續掛號", "依門診科別", actual_dept, "選擇看診時間"]
-#     if day_label:
-#         script.append(day_label)
-#     script.append(doctor_name)
-#     script.append("填寫個人資料")
 
