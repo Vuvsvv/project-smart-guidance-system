@@ -1,1 +1,16 @@
 venv/
+.env
+一般門診初診.json
+一般門診複診.json
+doctor.json
+check_*.py
+testwei.py
+saved_index/
+__pycache__/
+.claude/
+check_1_category.py
+check_2_department.py
+check_3_doctor.py
+check_4_doctor_department.py
+check_5_schedule.py
+CLAUDE.md
