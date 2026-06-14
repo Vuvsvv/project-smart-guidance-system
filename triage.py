@@ -221,10 +221,9 @@ def collect_symptoms(chat_request: dict) -> dict:
     }
     return triage_result
 
-# ─────────────────────────────────────────
-# 5. 收集就診偏好（availability + preferences）
-#    症狀收集完後，顯示五個列點問卷讓使用者一次回答
-# ─────────────────────────────────────────
+
+# 收集就診偏好（availability + preferences）
+
 AVAILABILITY_QUESTIONS = """請回答以下四個問題（可以用數字列點或一段話回答）：
 
 1. 【方便看診時段】您哪幾天的哪個時段方便看診？請把「星期」和「時段」一起說。
@@ -291,9 +290,8 @@ def parse_availability_answer(user_answer: str, triage_case: dict) -> dict:
     return triage_case
 
 
-# ─────────────────────────────────────────
-# 6. 主程式（模擬終端機對話）
-# ─────────────────────────────────────────
+
+# 主程式（模擬終端機對話）
 def main():
     print("=" * 50)
     print("台北榮民總醫院導引系統 ")
@@ -368,7 +366,7 @@ def main():
             print("=" * 50)
             # ── 中（TTAS 第三級）：照常推薦，僅加一句提醒 ──
             if triage_case["triage"].get("urgency_level") == "medium":
-                print("  ⚠️ 緊急程度：中（TTAS 第三級）→ 建議盡快於當日或隔天就診")
+                print("  緊急程度：中（TTAS 第三級）→ 建議盡快於當日或隔天就診")
             print(json.dumps(recommend_result, ensure_ascii=False, indent=2))
             print("=" * 50)
             print()
@@ -383,7 +381,7 @@ def main():
             if triage_case["triage"].get("urgency_level") == "high":
                 print(json.dumps(result, ensure_ascii=False, indent=2))
                 print("=" * 50)
-                print("  ⚠️ 緊急程度：重（疑似 TTAS 第一、二級）")
+                print("   緊急程度：重（疑似 TTAS 第一、二級）")
                 print(f"  {result['reply']}")
                 print("  → 請立即前往急診，本系統不再進行門診推薦")
                 print("=" * 50)
