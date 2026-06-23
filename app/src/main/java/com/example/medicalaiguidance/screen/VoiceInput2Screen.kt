@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.medicalaiguidance.navigation.Route
 
-@Deprecated("Legacy prototype screen with hard-coded transcript. Current main flow keeps triage in HelpScreen.")
+@Deprecated("Legacy prototype screen with hard-coded transcript. Current main flow keeps triage in ChatScreen.")
 @Composable
 fun VoiceInput2Screen(navController: NavController) {
     Column(

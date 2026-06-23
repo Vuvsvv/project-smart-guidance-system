@@ -22,7 +22,7 @@
 //import androidx.compose.ui.graphics.drawscope.Stroke
 //import androidx.compose.material.icons.filled.GraphicEq
 //
-//@Deprecated("Legacy prototype screen. Current main flow starts from HelpScreen and calls backend /chat directly.")
+//@Deprecated("Legacy prototype screen. Current main flow starts from ChatScreen and calls backend /chat directly.")
 //@Composable
 //fun VoiceInput1Screen(navController: NavController) {
 //    val primaryDark = Color(0xFF3E6666)
