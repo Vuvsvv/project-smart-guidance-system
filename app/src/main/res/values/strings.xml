@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Medical AI Guidance</string>
+    <string name="accessibility_desc">醫療 AI 導引輔助服務，提供螢幕提示與語音輸入功能。</string>
+</resources>
