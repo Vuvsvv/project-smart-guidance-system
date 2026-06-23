@@ -19,3 +19,11 @@ local.properties
 
 # macOS files
 .DS_Store
+
+# Backend local configuration and generated files
+.env
+android_medical_backend/.env
+android_medical_backend/.venv/
+android_medical_backend/**/__pycache__/
+android_medical_backend/**/*.pyc
+android_medical_backend/storage/

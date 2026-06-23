@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: android-medical-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DEPLOY_MODE
+        value: render_free
+      - key: DISABLE_LOCAL_EMBEDDING
+        value: "true"
+      - key: DB_SERVER
+        value: medichain-server.database.windows.net
+      - key: DB_NAME
+        value: MediChainDB
+      - key: DB_USER
+        value: medichain_admin
+      - key: DB_DRIVER
+        value: ODBC Driver 17 for SQL Server
+      - key: LLM_MODEL
+        value: gemini-2.5-flash
+      - key: EMBEDDING_MODEL
+        value: BAAI/bge-m3
