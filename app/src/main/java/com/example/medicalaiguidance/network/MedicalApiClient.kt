@@ -24,6 +24,78 @@ class MedicalApiClient(
     suspend fun generateScript(request: ScriptRequest): ScriptResponseDto =
         post("/generate_script", request.toJson(), ::parseScriptResponse)
 
+    suspend fun tts(request: TtsRequest): VoiceTtsResponseDto =
+        post("/voice/tts", request.toJson(), ::parseVoiceTtsResponse)
+
+    suspend fun voiceChat(
+        audioBytes: ByteArray,
+        caseId: String?,
+        lang: String,
+        confirmed: Boolean = false
+    ): VoiceChatResponseDto = withContext(Dispatchers.IO) {
+        val endpoint = baseUrl.trimEnd('/') + "/voice/chat"
+        val boundary = "----MedicalBoundary${System.currentTimeMillis()}"
+        Log.d(TAG, "POST $endpoint (multipart)")
+
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = 120_000
+            doInput = true
+            doOutput = true
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setRequestProperty("Accept", "application/json")
+        }
+
+        try {
+            connection.outputStream.use { output ->
+                val writer = output.bufferedWriter(Charsets.UTF_8)
+
+                fun writeField(name: String, value: String) {
+                    writer.write("--$boundary\r\n")
+                    writer.write("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
+                    writer.write(value)
+                    writer.write("\r\n")
+                }
+
+                caseId?.let { writeField("case_id", it) }
+                writeField("lang", lang)
+                writeField("confirmed", confirmed.toString())
+
+                writer.write("--$boundary\r\n")
+                writer.write("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
+                writer.write("Content-Type: audio/wav\r\n\r\n")
+                writer.flush()
+
+                output.write(audioBytes)
+                output.flush()
+
+                writer.write("\r\n--$boundary--\r\n")
+                writer.flush()
+            }
+
+            val statusCode = connection.responseCode
+            val responseBody = readBody(
+                if (statusCode in 200..299) connection.inputStream else connection.errorStream
+            )
+            Log.d(TAG, "HTTP $statusCode /voice/chat")
+
+            if (statusCode !in 200..299) {
+                throw MedicalApiException("語音後端錯誤 HTTP $statusCode：${extractErrorMessage(responseBody)}")
+            }
+
+            parseVoiceChatResponse(responseBody)
+        } catch (error: MedicalApiException) {
+            throw error
+        } catch (error: SocketTimeoutException) {
+            throw MedicalApiException("語音處理時間較長，請稍後再試。", error)
+        } catch (error: IOException) {
+            throw MedicalApiException("無法連線語音後端：$baseUrl", error)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private suspend fun <T> post(
         path: String,
         body: String,
@@ -93,7 +165,7 @@ class MedicalApiClient(
         private const val TAG = "MedicalApiClient"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 60_000
-        const val DEFAULT_BASE_URL = "https://android-medical-myself.onrender.com"
+        const val DEFAULT_BASE_URL = "http://192.168.50.63:8080"
     }
 }
 

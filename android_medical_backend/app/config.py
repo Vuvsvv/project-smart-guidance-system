@@ -17,5 +17,13 @@ class Settings(BaseSettings):
     deploy_mode: str = Field(default="local", alias="DEPLOY_MODE")
     disable_local_embedding: bool = Field(default=False, alias="DISABLE_LOCAL_EMBEDDING")
 
+    # 語音 gateway 設定
+    voice_enabled: bool = Field(default=False, alias="VOICE_ENABLED")
+    voice_gateway_url: str = Field(default="http://localhost:8000", alias="VOICE_GATEWAY_URL")
+    voice_gateway_key: str = Field(default="sk-secret-key-here", alias="VOICE_GATEWAY_KEY")
+    voice_gateway_is_ngrok: bool = Field(default=False, alias="VOICE_GATEWAY_IS_NGROK")
+    voice_default_lang: str = Field(default="taiwanese", alias="VOICE_DEFAULT_LANG")
+    voice_timeout: float = Field(default=60.0, alias="VOICE_TIMEOUT")
+
 def get_settings():
     return Settings()

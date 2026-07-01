@@ -26,5 +26,7 @@ services:
         value: ODBC Driver 17 for SQL Server
       - key: LLM_MODEL
         value: gemini-2.5-flash
+      - key: AI_TIMEOUT_SECONDS
+        value: "2.5"
       - key: EMBEDDING_MODEL
         value: BAAI/bge-m3

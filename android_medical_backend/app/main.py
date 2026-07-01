@@ -5,6 +5,7 @@ import logging
 from app.routes.chat import router as chat_router
 from app.routes.recommend import router as recommend_router
 from app.routes.generate_script import router as generate_script_router
+from app.routes.voice import router as voice_router
 from app.services.ai_service import initialize_ai
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(recommend_router)
 app.include_router(generate_script_router)
+app.include_router(voice_router)
 
 
 @app.on_event("startup")

@@ -211,3 +211,35 @@ class ScriptResponse(BaseModel):
     steps: List[ScriptStep] = Field(default_factory=list)
     message: Optional[str] = None
     step_count: int = 0
+
+
+# ─────────────────────────────────────────────
+# 語音端點 schema（/voice/chat）
+# 不影響現有 schema，只新增
+# ─────────────────────────────────────────────
+
+class VoiceChatResponse(BaseModel):
+    """語音聊天回應：文字（字幕）+ 語音（播放）+ 對話狀態"""
+    case_id: str
+    user_text: str = ""                          # ASR 辨識出長輩說的話（給字幕）
+    reply_text: str = ""                          # 系統回覆文字（給字幕）
+    reply_audio_base64: str = ""                 # 回覆語音 base64（給播放）
+    audio_format: str = "wav"                    # 音訊格式 wav / m4a
+    needMoreInfo: bool = True                     # 是否還要繼續問
+    stage: str = ""                               # 對話階段
+    department_result: Optional[DepartmentResult] = None
+    tts_failed: bool = False                      # TTS 失敗時 true，Android 改用系統 TTS 念 reply_text
+    error: Optional[str] = None
+
+
+class VoiceTtsRequest(BaseModel):
+    text: str
+    lang: str = "chinese"
+    speed: float = 1.0
+
+
+class VoiceTtsResponse(BaseModel):
+    audio_base64: str = ""
+    audio_format: str = "wav"
+    tts_failed: bool = False
+    error: Optional[str] = None

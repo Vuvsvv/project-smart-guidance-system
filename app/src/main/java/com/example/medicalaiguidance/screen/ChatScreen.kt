@@ -1,8 +1,10 @@
 package com.example.medicalaiguidance.screen
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +50,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,6 +64,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -72,8 +76,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.core.content.ContextCompat
 import com.example.medicalaiguidance.model.MessageSender
 import com.example.medicalaiguidance.navigation.Route
+import com.example.medicalaiguidance.util.AudioPlayer
 import com.example.medicalaiguidance.viewmodel.ChatViewModel
 import java.util.Locale
 
@@ -96,9 +102,12 @@ fun ChatScreen(
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
     val showDecisionButtons by viewModel.showDecisionButtons.collectAsState()
+    val speakingMessageId by viewModel.speakingMessageId.collectAsState()
     var selectedLanguage by remember { mutableStateOf("國語") }
 
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val audioPlayer = remember { AudioPlayer() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val speechLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -112,6 +121,13 @@ fun ChatScreen(
             viewModel.submitVoiceInput(transcript) {
                 navController.navigate(Route.SELECT_DOCTOR)
             }
+        }
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.startTaiwaneseRecording()
         }
     }
 
@@ -131,6 +147,38 @@ fun ChatScreen(
                 viewModel.onInputTextChanged("這台手機沒有可用的語音輸入服務")
             }
         }
+    }
+    val isTaiwaneseMode = selectedLanguage == "台語"
+    val currentVoiceLang = if (isTaiwaneseMode) "taiwanese" else "chinese"
+    val handleMicClick = {
+        if (isTaiwaneseMode) {
+            keyboardController?.hide()
+            if (isListening) {
+                viewModel.stopTaiwaneseRecordingAndSend(
+                    audioPlayer = audioPlayer,
+                    cacheDir = context.cacheDir
+                ) {
+                    navController.navigate(Route.SELECT_DOCTOR)
+                }
+            } else if (!isAiThinking) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (hasPermission) {
+                    viewModel.startTaiwaneseRecording()
+                } else {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        } else {
+            launchVoiceInput()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { audioPlayer.release() }
     }
 
     LaunchedEffect(historyId, startNew) {
@@ -234,7 +282,16 @@ fun ChatScreen(
                             RealBubbleItem(
                                 messageContent = msg.content,
                                 isUser = isUser,
-                                primaryDark = primaryDark
+                                primaryDark = primaryDark,
+                                isSpeaking = speakingMessageId == msg.id,
+                                onSpeakClicked = {
+                                    viewModel.speakMessage(
+                                        message = msg,
+                                        audioPlayer = audioPlayer,
+                                        cacheDir = context.cacheDir,
+                                        lang = currentVoiceLang
+                                    )
+                                }
                             )
 
                             if (showDecisionButtons && !isUser && isLastMessage) {
@@ -319,7 +376,7 @@ fun ChatScreen(
                                 color = if (isListening) Color(0xFFE74C3C) else micBgColor,
                                 shape = CircleShape
                             )
-                            .clickable { launchVoiceInput() },
+                            .clickable { handleMicClick() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -376,7 +433,9 @@ fun ChatScreen(
 fun RealBubbleItem(
     messageContent: String,
     isUser: Boolean,
-    primaryDark: Color
+    primaryDark: Color,
+    isSpeaking: Boolean = false,
+    onSpeakClicked: () -> Unit = {}
 ) {
     val warningOrange = Color(0xFFE6A23C)
     val inactiveIcon = Color(0xFFCCCCCC)
@@ -460,19 +519,19 @@ fun RealBubbleItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.clickable { },
+                        modifier = Modifier.clickable { onSpeakClicked() },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.VolumeUp,
                             contentDescription = "播放語音",
-                            tint = inactiveIcon,
+                            tint = if (isSpeaking) primaryDark else inactiveIcon,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "播放",
-                            color = inactiveIcon,
+                            color = if (isSpeaking) primaryDark else inactiveIcon,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal
                         )

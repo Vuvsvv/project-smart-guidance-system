@@ -160,6 +160,31 @@ data class ScriptResponseDto(
     val stepCount: Int = 0
 )
 
+data class TtsRequest(
+    val text: String,
+    val lang: String = "chinese",
+    val speed: Double = 1.0
+)
+
+data class VoiceTtsResponseDto(
+    val audioBase64: String = "",
+    val audioFormat: String = "wav",
+    val ttsFailed: Boolean = false,
+    val error: String? = null
+)
+
+data class VoiceChatResponseDto(
+    val caseId: String,
+    val userText: String = "",
+    val replyText: String = "",
+    val replyAudioBase64: String = "",
+    val audioFormat: String = "wav",
+    val needMoreInfo: Boolean = true,
+    val stage: String = "",
+    val ttsFailed: Boolean = false,
+    val error: String? = null
+)
+
 fun ChatRequest.toJson(): String = JSONObject().apply {
     caseId?.let { put("case_id", it) }
     message?.let { put("message", it) }
@@ -174,6 +199,12 @@ fun RecommendRequest.toJson(): String = JSONObject().apply {
 fun ScriptRequest.toJson(): String = JSONObject().apply {
     put("case_id", caseId)
     put("recommendation_id", recommendationId)
+}.toString()
+
+fun TtsRequest.toJson(): String = JSONObject().apply {
+    put("text", text)
+    put("lang", lang)
+    put("speed", speed)
 }.toString()
 
 fun parseTriageResult(json: String): TriageResultDto {
@@ -214,6 +245,31 @@ fun parseScriptResponse(json: String): ScriptResponseDto {
         steps = obj.optArray("steps").toScriptStepList(),
         message = obj.optNullableString("message"),
         stepCount = obj.optInt("step_count", 0)
+    )
+}
+
+fun parseVoiceTtsResponse(json: String): VoiceTtsResponseDto {
+    val obj = JSONObject(json)
+    return VoiceTtsResponseDto(
+        audioBase64 = obj.optString("audio_base64", ""),
+        audioFormat = obj.optString("audio_format", "wav"),
+        ttsFailed = obj.optBoolean("tts_failed", false),
+        error = obj.optNullableString("error")
+    )
+}
+
+fun parseVoiceChatResponse(json: String): VoiceChatResponseDto {
+    val obj = JSONObject(json)
+    return VoiceChatResponseDto(
+        caseId = obj.optString("case_id"),
+        userText = obj.optString("user_text", ""),
+        replyText = obj.optString("reply_text", ""),
+        replyAudioBase64 = obj.optString("reply_audio_base64", ""),
+        audioFormat = obj.optString("audio_format", "wav"),
+        needMoreInfo = obj.optBoolean("needMoreInfo", true),
+        stage = obj.optString("stage", ""),
+        ttsFailed = obj.optBoolean("tts_failed", false),
+        error = obj.optNullableString("error")
     )
 }
 

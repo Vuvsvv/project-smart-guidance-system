@@ -1,276 +1,265 @@
 # Android Medical AI Guidance
 
-智慧醫療導引系統，包含 Android Jetpack Compose 前端與 FastAPI 後端。
+Android Jetpack Compose frontend with a FastAPI backend for AI triage, doctor recommendation, booking-script generation, and voice integration.
 
-目前分支已將前後端整合在同一個 repository：
+This branch contains the current voice integration handoff state. It is meant to help backend teammates continue from a known working local setup.
+
+## Project Layout
 
 ```text
 .
-├── app/                         # Android 前端
-├── android_medical_backend/     # FastAPI 後端
+├── app/                         # Android app
+├── android_medical_backend/     # FastAPI backend
 ├── gradle/
 ├── build.gradle.kts
 ├── settings.gradle.kts
 └── README.md
 ```
 
-## 功能
+## Current Voice Behavior
 
-- 使用者可在 `ChatScreen` 輸入症狀並送出問診請求。
-- 前端會呼叫後端 `/chat`，由後端串接 Gemini API 與規則邏輯產生回覆。
-- AI 回覆會提示是否需要補充資訊、是否確認推薦科別與醫師。
-- 支援歷史紀錄保存。
-- 首頁會顯示最新兩筆近期對話。
-- 歷史紀錄頁可刪除紀錄。
-- 從歷史紀錄點選對話會回到 `ChatScreen` 並顯示該次對話。
-- 按「新增問診」會開啟一個全新的空白對話。
-- 支援醫師資料、科別資料與可看診時段的模擬資料。
+### ChatScreen Language Modes
 
-## 前端技術
+- `國語`
+  - Microphone uses Android built-in speech recognition (`RecognizerIntent`).
+  - Message playback calls backend `/voice/tts` with `lang = "chinese"`.
+  - Backend forwards to gateway `service_type = chinese_tts`.
 
-- Kotlin
-- Jetpack Compose
-- Android Navigation Compose
-- ViewModel
-- `HttpURLConnection` 呼叫後端 API
+- `台語`
+  - Microphone switches to app recording mode.
+  - First tap starts recording, second tap stops and uploads a WAV file.
+  - Upload target: backend `/voice/chat` with `lang = "taiwanese"`.
+  - Backend forwards ASR to gateway `service_type = taiwanese_asr`.
+  - Message playback calls backend `/voice/tts` with `lang = "taiwanese"`.
+  - Backend forwards TTS to gateway `service_type = taiwanese_tts`.
 
-主要畫面：
+### Important Current Limitation
 
-```text
-HomeScreen
-ChatScreen
-HistoryScreen
-DoctorSelectionScreen
-ConfirmNeedScreen
-```
+The real model gateway from the teammate/school machine is not included here.
 
-主要檔案：
+For local demo, this branch includes a lightweight compatible gateway:
 
 ```text
-app/src/main/java/com/example/medicalaiguidance/screen/ChatScreen.kt
-app/src/main/java/com/example/medicalaiguidance/viewmodel/ChatViewModel.kt
-app/src/main/java/com/example/medicalaiguidance/network/MedicalApiClient.kt
-app/src/main/java/com/example/medicalaiguidance/network/MedicalDtos.kt
-app/src/main/java/com/example/medicalaiguidance/repository/MedicalRepository.kt
-app/src/main/java/com/example/medicalaiguidance/navigation/NavGraph.kt
+android_medical_backend/local_voice_gateway.py
+android_medical_backend/synthesize_sapi.ps1
 ```
 
-## 後端技術
-
-- Python
-- FastAPI
-- Uvicorn
-- Gemini API
-- Rule-based triage fallback
-- Mock doctor schedule fallback
-
-後端資料夾：
+It provides the same gateway endpoints:
 
 ```text
-android_medical_backend/
+GET  /health
+POST /api/process
 ```
 
-主要後端檔案：
+It can generate playable WAV audio using Windows built-in SAPI TTS, so `chinese_tts` and `taiwanese_tts` can be tested end-to-end.
+
+Its ASR is only a placeholder:
 
 ```text
-android_medical_backend/app/main.py
-android_medical_backend/app/routes/chat.py
-android_medical_backend/app/routes/recommend.py
-android_medical_backend/app/routes/generate_script.py
-android_medical_backend/app/services/ai_service.py
-android_medical_backend/app/services/rule_engine.py
-android_medical_backend/app/services/case_store.py
-android_medical_backend/data/doctor.json
+taiwanese_asr -> returns "我不舒服"
+chinese_asr   -> returns "我不舒服"
 ```
 
-## API
+Replace this local gateway with the real model gateway for real Taiwanese ASR/TTS.
 
-前端目前使用的後端網址：
+## Backend APIs
 
-```text
-https://android-medical-myself.onrender.com
-```
-
-設定位置：
+Backend base URL for local phone testing is currently set in:
 
 ```text
 app/src/main/java/com/example/medicalaiguidance/network/MedicalApiClient.kt
 ```
 
-目前串接的 API：
+Current value:
+
+```kotlin
+const val DEFAULT_BASE_URL = "http://192.168.50.63:8080"
+```
+
+Update this IP when testing on another computer/network.
+
+Backend endpoints:
 
 ```text
 POST /chat
 POST /recommend
 POST /generate_script
+POST /voice/chat
+POST /voice/tts
+GET  /voice/health
 ```
 
-Swagger 文件：
+Voice gateway contract used by backend:
 
 ```text
-https://android-medical-myself.onrender.com/docs
+POST {VOICE_GATEWAY_URL}/api/process
+Header: X-API-Key: {VOICE_GATEWAY_KEY}
 ```
 
-## 啟動後端
+Gateway `service_type` mapping:
 
-進入後端資料夾：
+```text
+taiwanese_asr
+chinese_asr
+taiwanese_tts
+chinese_tts
+```
+
+## Local Run
+
+Use two terminals.
+
+### 1. Start Compatible Local Gateway
 
 ```powershell
 cd android_medical_backend
+python -m uvicorn local_voice_gateway:app --host 0.0.0.0 --port 8000
 ```
 
-建立虛擬環境：
-
-```powershell
-python -m venv .venv
-```
-
-啟動虛擬環境：
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-安裝套件：
-
-```powershell
-pip install -r requirements.txt
-```
-
-建立 `.env`，填入自己的環境變數：
+Check:
 
 ```text
-GOOGLE_API_KEY=你的 Gemini API Key
-DB_PASSWORD=你的資料庫密碼
-DEPLOY_MODE=render_free
+http://127.0.0.1:8000/health
+```
+
+### 2. Start Backend
+
+Create `android_medical_backend/.env`:
+
+```env
+VOICE_ENABLED=true
+VOICE_GATEWAY_URL=http://localhost:8000
+VOICE_GATEWAY_KEY=sk-secret-key-here
+VOICE_GATEWAY_IS_NGROK=false
+VOICE_DEFAULT_LANG=taiwanese
+VOICE_TIMEOUT=120
+
+GOOGLE_API_KEY=
+DB_PASSWORD=
+DEPLOY_MODE=local
 DISABLE_LOCAL_EMBEDDING=true
 ```
 
-啟動後端：
+Install dependencies:
 
 ```powershell
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd android_medical_backend
+python -m pip install -r requirements.txt
 ```
 
-本機 Swagger：
+Start backend on `8080`:
+
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Check:
 
 ```text
-http://localhost:8000/docs
+http://127.0.0.1:8080/docs
+http://127.0.0.1:8080/voice/health
 ```
 
-## 讓手機連本機後端
+Expected `/voice/health` with compatible local gateway:
 
-手機與電腦需要連到同一個 Wi-Fi。
+```json
+{
+  "voice_enabled": true,
+  "gateway": {
+    "gateway": "local-windows-tts",
+    "services": {
+      "chinese_tts": "healthy",
+      "taiwanese_tts": "fallback_to_chinese_voice",
+      "chinese_asr": "demo_placeholder",
+      "taiwanese_asr": "demo_placeholder"
+    }
+  }
+}
+```
 
-先查電腦 IP：
+## Android Build
 
 ```powershell
-ipconfig
+.\gradlew.bat assembleDebug
 ```
 
-找到 Wi-Fi 的 IPv4，例如：
-
-```text
-192.168.1.23
-```
-
-接著將前端 API base URL 改成：
-
-```kotlin
-const val DEFAULT_BASE_URL = "http://192.168.1.23:8000"
-```
-
-修改位置：
-
-```text
-app/src/main/java/com/example/medicalaiguidance/network/MedicalApiClient.kt
-```
-
-後端啟動時必須使用：
-
-```powershell
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-如果只用 `127.0.0.1` 或 `localhost`，手機會連到手機自己，不會連到電腦後端。
-
-## 建置前端 APK
-
-回到專案根目錄：
-
-```powershell
-cd ..
-```
-
-建置 debug APK：
-
-```powershell
-.\gradlew.bat :app:assembleDebug
-```
-
-APK 位置：
+Debug APK:
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-安裝到手機：
-
-```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
-```
-
-## Render 部署
-
-目前 Render 後端網址：
+## Key Frontend Files
 
 ```text
-https://android-medical-myself.onrender.com
+app/src/main/AndroidManifest.xml
+app/src/main/java/com/example/medicalaiguidance/screen/ChatScreen.kt
+app/src/main/java/com/example/medicalaiguidance/viewmodel/ChatViewModel.kt
+app/src/main/java/com/example/medicalaiguidance/repository/MedicalRepository.kt
+app/src/main/java/com/example/medicalaiguidance/network/MedicalApiClient.kt
+app/src/main/java/com/example/medicalaiguidance/network/MedicalDtos.kt
+app/src/main/java/com/example/medicalaiguidance/util/AudioRecorder.kt
+app/src/main/java/com/example/medicalaiguidance/util/AudioPlayer.kt
 ```
 
-Render 需要設定環境變數：
+## Key Backend Files
 
 ```text
-GOOGLE_API_KEY
-DB_PASSWORD
-DEPLOY_MODE=render_free
-DISABLE_LOCAL_EMBEDDING=true
+android_medical_backend/app/main.py
+android_medical_backend/app/routes/voice.py
+android_medical_backend/app/services/voice_client.py
+android_medical_backend/app/schemas.py
+android_medical_backend/app/config.py
+android_medical_backend/local_voice_gateway.py
+android_medical_backend/synthesize_sapi.ps1
 ```
 
-Render start command：
+## Cleanup Done
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port $PORT
+Unused old flow files were removed:
+
+```text
+app/src/main/java/com/example/medicalaiguidance/state/TriageFlowController.kt
+app/src/main/java/com/example/medicalaiguidance/screen/VoiceInput1Screen.kt
+app/src/main/java/com/example/medicalaiguidance/screen/VoiceInput2Screen.kt
 ```
 
-Render free plan 可能會 cold start，第一次呼叫 API 會比較慢。
+## Backend Handoff Notes
 
-## 測試
+To connect the real model gateway:
 
-前端建置測試：
+1. Start the teammate/model gateway and confirm:
 
-```powershell
-.\gradlew.bat :app:assembleDebug
-```
+   ```text
+   {gateway_url}/health
+   ```
 
-後端測試：
+2. Update backend `.env`:
 
-```powershell
-cd android_medical_backend
-.\.venv\Scripts\python.exe -m unittest tests.test_backend_flow
-```
+   ```env
+   VOICE_ENABLED=true
+   VOICE_GATEWAY_URL=http://localhost:8000
+   VOICE_GATEWAY_KEY=actual-key
+   VOICE_GATEWAY_IS_NGROK=false
+   ```
 
-後端語法檢查：
+   If using ngrok:
 
-```powershell
-.\.venv\Scripts\python.exe -m compileall app main.py
-```
+   ```env
+   VOICE_GATEWAY_URL=https://xxxx.ngrok-free.dev
+   VOICE_GATEWAY_IS_NGROK=true
+   ```
 
-## 注意事項
+3. Verify:
 
-- `.env` 不要上傳到 GitHub。
-- `.venv` 不要上傳到 GitHub。
-- `GOOGLE_API_KEY` 不要寫死在前端或 commit 到 repository。
-- 手機測試本機後端時，前端必須使用電腦的 Wi-Fi IPv4。
-- 若使用 Render 後端，前端可維持 `https://android-medical-myself.onrender.com`。
-- AI 回覆時間太長時，常見原因是 Render cold start 或 Gemini API 回應較慢。
+   ```text
+   http://127.0.0.1:8080/voice/health
+   ```
+
+4. Test the Android app:
+
+   - `國語` playback should call `chinese_tts`.
+   - `台語` playback should call `taiwanese_tts`.
+   - `台語` microphone upload should call `taiwanese_asr`.
+
+Do not commit real `.env` files or API keys.

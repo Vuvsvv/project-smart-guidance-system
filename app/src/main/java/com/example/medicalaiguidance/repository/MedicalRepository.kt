@@ -15,6 +15,9 @@ import com.example.medicalaiguidance.network.RecommendationResultDto
 import com.example.medicalaiguidance.network.ScriptRequest
 import com.example.medicalaiguidance.network.ScriptResponseDto
 import com.example.medicalaiguidance.network.TriageResultDto
+import com.example.medicalaiguidance.network.TtsRequest
+import com.example.medicalaiguidance.network.VoiceChatResponseDto
+import com.example.medicalaiguidance.network.VoiceTtsResponseDto
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -145,7 +148,16 @@ class MedicalRepository(
     )
 
     suspend fun chat(caseId: String?, message: String): TriageResultDto =
-        apiClient.chat(ChatRequest(caseId = caseId, message = message))
+        apiClient.chat(ChatRequest(caseId = caseId, message = message)).also { result ->
+            val departmentResult = result.departmentResult ?: result.triageCase?.departmentResult
+            if (departmentResult != null && departmentResult.childDept.isNotBlank()) {
+                currentDepartment = Department(
+                    id = departmentResult.childDept,
+                    name = departmentResult.childDept,
+                    clinicName = departmentResult.parentDept
+                )
+            }
+        }
 
     suspend fun confirmTriage(caseId: String): TriageResultDto =
         apiClient.chat(ChatRequest(caseId = caseId, confirmed = true))
@@ -155,6 +167,22 @@ class MedicalRepository(
 
     suspend fun generateScript(caseId: String, recommendationId: String): ScriptResponseDto =
         apiClient.generateScript(ScriptRequest(caseId = caseId, recommendationId = recommendationId))
+
+    suspend fun synthesizeSpeech(text: String, lang: String): VoiceTtsResponseDto =
+        apiClient.tts(TtsRequest(text = text, lang = lang))
+
+    suspend fun voiceChat(
+        audioBytes: ByteArray,
+        caseId: String?,
+        lang: String,
+        confirmed: Boolean = false
+    ): VoiceChatResponseDto =
+        apiClient.voiceChat(
+            audioBytes = audioBytes,
+            caseId = caseId,
+            lang = lang,
+            confirmed = confirmed
+        )
 
     fun getAllHistory(): Flow<List<History>> = flow {
         loadHistoryIfNeeded()
@@ -196,7 +224,7 @@ class MedicalRepository(
         val history = History(
             id = historyId,
             date = todayText(),
-            typeTitle = if (completed) "掛號導引" else "AI 問診",
+            typeTitle = if (completed) currentDepartment?.name ?: "掛號導引" else "AI 問診",
             summaryText = summaryText.ifBlank { "問診紀錄" },
             doctorName = doctorName,
             status = if (completed) HistoryStatus.COMPLETED else HistoryStatus.UNCOMPLETED,

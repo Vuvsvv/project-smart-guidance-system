@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,9 +54,18 @@ fun HomeScreen(
         }
     }
 
-    val backgroundColor = Color(0xFFF7F9F9)
     val textDarkColor = Color(0xFF1A2E2E)
     val primaryDark = Color(0xFF385E5E)
+
+    val homeBackgroundGradient = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFFE8F2F0),
+            Color(0xFFFBFCFC),
+            Color(0xFFE4EFED)
+        ),
+        start = Offset(0f, 0f),
+        end = Offset(900f, 1800f)
+    )
 
     val buttonGradient = Brush.verticalGradient(
         colors = listOf(Color(0xFF6E9999), Color(0xFF036A6D))
@@ -64,7 +74,7 @@ fun HomeScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor)
+            .background(homeBackgroundGradient)
             .statusBarsPadding(),
         contentPadding = PaddingValues(start = 28.dp, end = 28.dp, bottom = 24.dp)
     ) {
@@ -96,12 +106,12 @@ fun HomeScreen(
                     .height(220.dp)
                     .shadow(
                         elevation = 12.dp,
-                        shape = RoundedCornerShape(36.dp),
+                        shape = RoundedCornerShape(50.dp),
                         clip = false,
                         ambientColor = Color(0xFF385E5E).copy(alpha = 0.3f),
                         spotColor = Color(0xFF385E5E).copy(alpha = 0.5f)
                     )
-                    .background(brush = buttonGradient, shape = RoundedCornerShape(36.dp))
+                    .background(brush = buttonGradient, shape = RoundedCornerShape(50.dp))
                     .clickable {
                         navController.navigate(Route.CHAT)
                     },
@@ -174,7 +184,7 @@ fun HomeScreen(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
         }
 
         // 3️⃣ 渲染動態的近期紀錄列表
@@ -184,7 +194,7 @@ fun HomeScreen(
         ) { history ->
             RecordItem(
                 date = history.date,
-                summary = if (history.status == HistoryStatus.UNCOMPLETED) "症狀評估中" else history.summaryText,
+                summary = if (history.status == HistoryStatus.UNCOMPLETED) "症狀評估中" else history.typeTitle,
                 icon = if (history.status == HistoryStatus.UNCOMPLETED) Icons.Default.Psychology else history.icon,
                 status = history.status,
                 onClick = { navController.navigate(Route.chatHistory(history.id)) }
@@ -209,13 +219,13 @@ fun RecordItem(
             .fillMaxWidth()
             .shadow(
                 elevation = 4.dp,
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(45.dp),
                 ambientColor = Color.Black.copy(alpha = 0.05f),
                 spotColor = Color.Black.copy(alpha = 0.05f)
             )
-            .background(Color.White, shape = RoundedCornerShape(28.dp))
+            .background(Color.White, shape = RoundedCornerShape(45.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 18.dp),
+            .padding(horizontal = 28.dp, vertical = 28.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 圖標圓圈

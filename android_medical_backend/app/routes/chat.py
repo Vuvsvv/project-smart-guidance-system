@@ -51,10 +51,10 @@ async def chat(req: ChatRequest) -> TriageResult:
         )
 
     _sync_confirmation_flags(case)
-    if has_user_input:
-        ai_suggestion = await refine_case_with_ai(case)
-
     case.triage = evaluate_urgency(case)
+    if has_user_input and _should_refine_with_ai(case):
+        ai_suggestion = await refine_case_with_ai(case)
+        case.triage = evaluate_urgency(case)
     ai_attempted_override = merge_ai_next_question(case, ai_suggestion)
     case.conversation_state.is_complete = not case.triage.need_more_info
     logger.info(
@@ -139,3 +139,14 @@ def _sync_confirmation_flags(case: TriageCase) -> None:
     if case.confirmed:
         case.conversation_state.confirmed = True
         case.conversation_state.awaiting_confirmation = False
+
+
+def _should_refine_with_ai(case: TriageCase) -> bool:
+    if case.triage.need_more_info and case.triage.next_question:
+        logger.info(
+            "chat skipped AI refine case_id=%s reason=deterministic_next_question next_question=%s",
+            case.case_id,
+            case.triage.next_question,
+        )
+        return False
+    return True
