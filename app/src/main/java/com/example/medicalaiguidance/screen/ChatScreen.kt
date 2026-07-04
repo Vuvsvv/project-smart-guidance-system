@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -30,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -573,47 +576,54 @@ fun LanguageToggle(
     primaryDark: Color,
     selectedColor: Color
 ) {
-    Row(
+    val itemWidth = 64.dp
+    val indicatorOffset by animateDpAsState(
+        targetValue = if (selectedLanguage == "台語") itemWidth else 0.dp,
+        animationSpec = tween(durationMillis = 260),
+        label = "languageToggleOffset"
+    )
+
+    Box(
         modifier = Modifier
             .height(58.dp)
+            .width(itemWidth * 2 + 12.dp)
             .shadow(elevation = 4.dp, shape = RoundedCornerShape(30.dp))
             .background(Color.White, shape = RoundedCornerShape(30.dp))
-            .padding(6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(6.dp)
     ) {
-        LanguageToggleItem(
-            text = "國語",
-            selected = selectedLanguage == "國語",
-            primaryDark = primaryDark,
-            selectedColor = selectedColor,
-            onClick = { onLanguageSelected("國語") }
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset)
+                .height(46.dp)
+                .width(itemWidth)
+                .background(selectedColor, RoundedCornerShape(24.dp))
         )
-        LanguageToggleItem(
-            text = "台語",
-            selected = selectedLanguage == "台語",
-            primaryDark = primaryDark,
-            selectedColor = selectedColor,
-            onClick = { onLanguageSelected("台語") }
-        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LanguageToggleItem(
+                text = "國語",
+                primaryDark = primaryDark,
+                onClick = { onLanguageSelected("國語") }
+            )
+            LanguageToggleItem(
+                text = "台語",
+                primaryDark = primaryDark,
+                onClick = { onLanguageSelected("台語") }
+            )
+        }
     }
 }
 
 @Composable
 fun LanguageToggleItem(
     text: String,
-    selected: Boolean,
     primaryDark: Color,
-    selectedColor: Color,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .height(46.dp)
             .width(64.dp)
-            .background(
-                color = if (selected) selectedColor else Color.Transparent,
-                shape = RoundedCornerShape(24.dp)
-            )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {

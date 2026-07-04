@@ -5,12 +5,14 @@ import com.example.medicalaiguidance.model.Appointment
 import com.example.medicalaiguidance.model.ChatMessage
 import com.example.medicalaiguidance.model.Department
 import com.example.medicalaiguidance.model.Doctor
+import com.example.medicalaiguidance.model.DoctorProfile
 import com.example.medicalaiguidance.model.History
 import com.example.medicalaiguidance.model.HistoryStatus
 import com.example.medicalaiguidance.model.MessageSender
 import com.example.medicalaiguidance.network.ChatRequest
 import com.example.medicalaiguidance.network.MedicalApiClient
 import com.example.medicalaiguidance.network.RecommendRequest
+import com.example.medicalaiguidance.network.RecommendationItemDto
 import com.example.medicalaiguidance.network.RecommendationResultDto
 import com.example.medicalaiguidance.network.ScriptRequest
 import com.example.medicalaiguidance.network.ScriptResponseDto
@@ -37,10 +39,13 @@ class MedicalRepository(
         private var appContext: Context? = null
         private var currentDepartment: Department? = null
         private var currentDoctor: Doctor? = null
+        private var currentCaseId: String? = null
+        private var specialtyPriority: Boolean = false
         private var currentDayOfWeek: String = "週一"
         private var currentTimeSlot: String = "上午"
         private val chatMessages = mutableListOf<ChatMessage>()
         private val historyItems = mutableListOf<History>()
+        private var doctorProfiles: List<DoctorProfile>? = null
         private var historyLoaded = false
 
         fun initialize(context: Context) {
@@ -78,10 +83,26 @@ class MedicalRepository(
                 .putString(HISTORY_KEY, array.toString())
                 .apply()
         }
+
+        private fun loadDoctorProfilesIfNeeded(): List<DoctorProfile> {
+            doctorProfiles?.let { return it }
+            val context = appContext ?: return emptyList()
+            val profiles = runCatching {
+                val json = context.assets.open("teacher_profiles.json")
+                    .bufferedReader()
+                    .use { it.readText() }
+                val array = JSONArray(json)
+                (0 until array.length()).mapNotNull { index ->
+                    array.optJSONObject(index)?.toDoctorProfile()
+                }
+            }.getOrDefault(emptyList())
+            doctorProfiles = profiles
+            return profiles
+        }
     }
 
     private val departments = listOf(
-        Department("dept_orthopedics", "骨科", "一般骨科"),
+        Department("dept_orthopedics", "外科系", "一般骨科"),
         Department("dept_eye", "眼科", "一般眼科"),
         Department("dept_family", "家醫科", "家庭醫學科")
     )
@@ -91,7 +112,7 @@ class MedicalRepository(
             id = "doc_01",
             name = "蘇宇平",
             departmentId = "dept_01",
-            title = "主治醫師",
+            title = "一般骨科",
             specialties = listOf(
                 "1. 各類成人及兒童創傷性骨折",
                 "2. 微創人工膝髖關節置換手術",
@@ -111,7 +132,7 @@ class MedicalRepository(
             id = "doc_02",
             name = "邱方遙",
             departmentId = "dept_01",
-            title = "科主任",
+            title = "一般骨科",
             specialties = listOf(
                 "1. 人工關節置換術、骨折外傷、不癒合、微創、矯正截骨、骨延長、長短腳、骨盆骨折",
                 "2. 髖關節脫臼、關節炎、骨質疏鬆、運動傷害",
@@ -128,7 +149,7 @@ class MedicalRepository(
             id = "doc_03",
             name = "許逵翔",
             departmentId = "dept_01",
-            title = "主治醫師",
+            title = "一般骨科",
             specialties = listOf(
                 "1. 髖關節保留手術",
                 "2. 肌肉骨骼超音波",
@@ -149,6 +170,10 @@ class MedicalRepository(
 
     suspend fun chat(caseId: String?, message: String): TriageResultDto =
         apiClient.chat(ChatRequest(caseId = caseId, message = message)).also { result ->
+            currentCaseId = result.caseId
+            result.triageCase?.preferences?.let { preferences ->
+                specialtyPriority = preferences.specialtyPriority
+            }
             val departmentResult = result.departmentResult ?: result.triageCase?.departmentResult
             if (departmentResult != null && departmentResult.childDept.isNotBlank()) {
                 currentDepartment = Department(
@@ -160,10 +185,19 @@ class MedicalRepository(
         }
 
     suspend fun confirmTriage(caseId: String): TriageResultDto =
-        apiClient.chat(ChatRequest(caseId = caseId, confirmed = true))
+        apiClient.chat(ChatRequest(caseId = caseId, confirmed = true)).also { result ->
+            currentCaseId = result.caseId
+            result.triageCase?.preferences?.let { preferences ->
+                specialtyPriority = preferences.specialtyPriority
+            }
+        }
 
     suspend fun recommend(caseId: String): RecommendationResultDto =
         apiClient.recommend(RecommendRequest(caseId = caseId))
+
+    fun getCurrentCaseId(): String? = currentCaseId
+
+    fun isSpecialtyPriority(): Boolean = specialtyPriority
 
     suspend fun generateScript(caseId: String, recommendationId: String): ScriptResponseDto =
         apiClient.generateScript(ScriptRequest(caseId = caseId, recommendationId = recommendationId))
@@ -182,7 +216,9 @@ class MedicalRepository(
             caseId = caseId,
             lang = lang,
             confirmed = confirmed
-        )
+        ).also { result ->
+            currentCaseId = result.caseId
+        }
 
     fun getAllHistory(): Flow<List<History>> = flow {
         loadHistoryIfNeeded()
@@ -235,6 +271,21 @@ class MedicalRepository(
 
     fun getChatMessages(): List<ChatMessage> = chatMessages
 
+    fun getDoctorProfileByName(name: String): DoctorProfile? {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return null
+        return loadDoctorProfilesIfNeeded().firstOrNull { profile ->
+            profile.name == normalizedName ||
+                normalizedName.contains(profile.name) ||
+                profile.name.contains(normalizedName)
+        }
+    }
+
+    fun getCurrentDepartmentLabel(): String? =
+        currentDepartment?.let { department ->
+            department.clinicName.ifBlank { department.name }
+        }
+
     fun addMessage(message: ChatMessage) {
         chatMessages.add(message)
     }
@@ -273,6 +324,27 @@ class MedicalRepository(
         }
     }
 
+    fun setCurrentRecommendation(recommendation: RecommendationItemDto) {
+        val departmentName = recommendation.childDept.ifBlank { currentDepartment?.name ?: "門診科別" }
+        val clinicName = recommendation.parentDept.ifBlank { departmentName }
+        val timeLabel = recommendation.slot.ifBlank { recommendation.session.ifBlank { "上午" } }
+        currentDepartment = Department(
+            id = departmentName,
+            name = departmentName,
+            clinicName = clinicName
+        )
+        currentDoctor = Doctor(
+            id = recommendation.recommendationId,
+            name = recommendation.doctor.ifBlank { "推薦醫師" },
+            departmentId = departmentName,
+            title = "推薦醫師",
+            specialties = recommendation.reasons,
+            availableSlots = listOf(recommendation.date to timeLabel)
+        )
+        currentDayOfWeek = recommendation.date
+        currentTimeSlot = timeLabel
+    }
+
     fun setCurrentTimeSlot(dayOfWeek: String, timeSlot: String) {
         currentDayOfWeek = dayOfWeek
         currentTimeSlot = timeSlot
@@ -281,10 +353,11 @@ class MedicalRepository(
     fun getConfirmedAppointment(): Appointment {
         val department = currentDepartment ?: departments[0]
         val doctor = currentDoctor ?: doctors[0]
+        val visitDate = upcomingDateFor(currentDayOfWeek)
         return Appointment(
             id = "apt_${System.currentTimeMillis()}",
-            date = todayText(),
-            dayOfWeek = currentDayOfWeek,
+            date = visitDate.first,
+            dayOfWeek = visitDate.second,
             timeSlot = currentTimeSlot,
             department = department,
             doctor = doctor
@@ -294,6 +367,81 @@ class MedicalRepository(
 
 private fun todayText(): String =
     SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date())
+
+private fun upcomingDateFor(dayText: String): Pair<String, String> {
+    val today = java.util.Calendar.getInstance(Locale.TAIWAN)
+    val targetDayOfWeek = dayText.toCalendarDayOfWeek()
+        ?: dayText.toDateCalendarDayOfWeek()
+        ?: today.get(java.util.Calendar.DAY_OF_WEEK)
+    val todayDayOfWeek = today.get(java.util.Calendar.DAY_OF_WEEK)
+    val daysUntilTarget = (targetDayOfWeek - todayDayOfWeek + 7) % 7
+    val visitDate = today.clone() as java.util.Calendar
+    visitDate.add(java.util.Calendar.DAY_OF_YEAR, daysUntilTarget)
+    return SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(visitDate.time) to
+        targetDayOfWeek.toChineseWeekday()
+}
+
+private fun String.toCalendarDayOfWeek(): Int? {
+    val normalized = trim()
+    return when {
+        normalized.contains("週日") || normalized.contains("星期日") ||
+            normalized.contains("周日") || normalized.contains("禮拜日") ||
+            normalized.contains("週天") || normalized.contains("星期天") ||
+            normalized == "日" || normalized == "天" -> java.util.Calendar.SUNDAY
+        normalized.contains("週一") || normalized.contains("星期一") ||
+            normalized.contains("周一") || normalized.contains("禮拜一") ||
+            normalized == "一" -> java.util.Calendar.MONDAY
+        normalized.contains("週二") || normalized.contains("星期二") ||
+            normalized.contains("周二") || normalized.contains("禮拜二") ||
+            normalized == "二" -> java.util.Calendar.TUESDAY
+        normalized.contains("週三") || normalized.contains("星期三") ||
+            normalized.contains("周三") || normalized.contains("禮拜三") ||
+            normalized == "三" -> java.util.Calendar.WEDNESDAY
+        normalized.contains("週四") || normalized.contains("星期四") ||
+            normalized.contains("周四") || normalized.contains("禮拜四") ||
+            normalized == "四" -> java.util.Calendar.THURSDAY
+        normalized.contains("週五") || normalized.contains("星期五") ||
+            normalized.contains("周五") || normalized.contains("禮拜五") ||
+            normalized == "五" -> java.util.Calendar.FRIDAY
+        normalized.contains("週六") || normalized.contains("星期六") ||
+            normalized.contains("周六") || normalized.contains("禮拜六") ||
+            normalized == "六" -> java.util.Calendar.SATURDAY
+        else -> null
+    }
+}
+
+private fun String.toDateCalendarDayOfWeek(): Int? {
+    val value = trim()
+    val formats = listOf("yyyy/MM/dd", "yyyy-MM-dd", "MM/dd", "M/d")
+    return formats.firstNotNullOfOrNull { pattern ->
+        runCatching {
+            val formatter = SimpleDateFormat(pattern, Locale.TAIWAN)
+            formatter.isLenient = false
+            val parsedDate = formatter.parse(value) ?: return@runCatching null
+            java.util.Calendar.getInstance(Locale.TAIWAN).apply {
+                time = parsedDate
+                if (!pattern.contains("yyyy")) {
+                    set(
+                        java.util.Calendar.YEAR,
+                        java.util.Calendar.getInstance(Locale.TAIWAN).get(java.util.Calendar.YEAR)
+                    )
+                }
+            }.get(java.util.Calendar.DAY_OF_WEEK)
+        }.getOrNull()
+    }
+}
+
+private fun Int.toChineseWeekday(): String =
+    when (this) {
+        java.util.Calendar.SUNDAY -> "週日"
+        java.util.Calendar.MONDAY -> "週一"
+        java.util.Calendar.TUESDAY -> "週二"
+        java.util.Calendar.WEDNESDAY -> "週三"
+        java.util.Calendar.THURSDAY -> "週四"
+        java.util.Calendar.FRIDAY -> "週五"
+        java.util.Calendar.SATURDAY -> "週六"
+        else -> ""
+    }
 
 private fun History.toJson(): JSONObject = JSONObject().apply {
     put("id", id)
@@ -342,3 +490,35 @@ private fun JSONObject.toHistory(): History {
         chatMessages = messages
     )
 }
+
+private fun JSONObject.toDoctorProfile(): DoctorProfile = DoctorProfile(
+    name = optString("name"),
+    photoUrl = optNullableString("photo_url"),
+    education = optNullableString("education").toProfileLines(),
+    currentPositions = optNullableString("current_positions").toProfileLines(),
+    experience = optNullableString("experience").toProfileLines(),
+    specialtyTags = optJSONArray("specialty_tags").toStringList(),
+    titles = optJSONArray("titles").toStringList(),
+    tid = if (has("tid") && !isNull("tid")) optInt("tid") else null
+)
+
+private fun String?.toProfileLines(): List<String> {
+    if (isNullOrBlank()) return emptyList()
+    return split('；', ';')
+        .map { item ->
+            item.trim()
+                .removePrefix("-")
+                .trim()
+        }
+        .filter { it.isNotBlank() }
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    if (this == null) return emptyList()
+    return (0 until length()).mapNotNull { index ->
+        optString(index).takeIf { it.isNotBlank() }
+    }
+}
+
+private fun JSONObject.optNullableString(key: String): String? =
+    if (has(key) && !isNull(key)) optString(key) else null

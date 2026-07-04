@@ -235,7 +235,7 @@ fun ConfirmNeedScreen(
                 ) {
                     InfoRowItem(Icons.Default.LocalHospital, "科別", "$targetDept $targetClinic")
                     HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
-                    InfoRowItem(Icons.Default.Accessibility, "看診醫師", "$targetDoctor 醫師", "${currentApt.doctor.title}")
+                    InfoRowItem(Icons.Default.Accessibility, "看診醫師", "$targetDoctor 醫師")
                     HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
                     InfoRowItem(Icons.Default.AccessTime, "預約時間", "$targetDayString $targetTime")
                 }

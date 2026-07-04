@@ -238,8 +238,8 @@ class ChatViewModel(
     }
 
     fun chooseRecommendation() {
-        _showDecisionButtons.value = false
-        _showDoctorButton.value = false
+        _showDecisionButtons.value = true
+        _showDoctorButton.value = true
     }
 
     fun continueEditing() {
