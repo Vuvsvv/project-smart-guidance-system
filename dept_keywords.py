@@ -105,29 +105,6 @@ KEYWORD_TO_DEPT = {
 }
 
 
-def match_candidate_depts(patient_input: PatientInput) -> dict:
-    """
-    掃描症狀文字，回傳 {子科別: 命中關鍵字數}。
-
-    掃描來源：symptom + body_part + accompanying_symptoms 串成一段文字。
-    回傳「命中次數」而非只有名單，讓 confidence 能用命中比例計算。
-    全部沒命中 → 回空 dict（第三步改丟全部科別清單給 AI）。
-    """
-    parts = [
-        patient_input.symptom or "",
-        patient_input.body_part or "",
-    ]
-    parts.extend(patient_input.accompanying_symptoms or [])
-    text = " ".join(parts)
-
-    hits = {}
-    for dept, keywords in KEYWORD_TO_DEPT.items():
-        count = sum(1 for kw in keywords if kw in text)
-        if count > 0:
-            hits[dept] = count
-    return hits
-
-
 def count_symptom_coverage(patient_input: PatientInput):
     
     symptoms = [patient_input.symptom or ""]
@@ -146,10 +123,3 @@ def count_symptom_coverage(patient_input: PatientInput):
     return coverage_count, total
 
 
-if __name__ == "__main__":
-    demo = PatientInput(
-        symptom="頭痛",
-        body_part="頭部",
-        accompanying_symptoms=["發燒", "頸部僵硬"],
-    )
-    print(match_candidate_depts(demo))
