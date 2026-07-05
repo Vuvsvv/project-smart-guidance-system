@@ -2,6 +2,7 @@ package com.example.medicalaiguidance.service
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.util.Log
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.WindowManager
@@ -24,6 +25,10 @@ class OverlayManager(private val context: Context) {
         val padding = 15
         val targetWidth = rect.width() + (padding * 2)
         val targetHeight = rect.height() + (padding * 2)
+        Log.d(
+            "vgh_id_detect",
+            "顯示紅框 rect=${rect.toShortString()} size=${targetWidth}x$targetHeight"
+        )
 
         if (view == null) {
             view = View(context)
