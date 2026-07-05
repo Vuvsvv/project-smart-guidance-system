@@ -1,98 +1,48 @@
 import json
+import re
 import uuid
-from config import Settings         
-from database import get_db_connection, get_active_dept_names  
-from recommend import recommend      
+from config import Settings
+from recommend import recommend
+from schedule import SESSIONS_DESC
+from models import (
+    ChatRequest, TriageResult, TriageCase, HistoryRecord,
+    PatientInput, Triage, ConversationState, RecommendRequest,
+    Availability, Preferences,
+)
 
-# ─────────────────────────────────────────
-#  第一段：收集症狀（AI 追問）
-#
-#    輸入：ChatRequest
-#      - message：使用者這次說的話
-#      - triage_case：之前的病歷（第一次傳入時為 None）
-#
-#    輸出：TriageResult
-#      - needMoreInfo: true  → AI 還要繼續問
-#      - needMoreInfo: false → 資料夠了，可以讓使用者確認
-# ─────────────────────────────────────────
-def collect_symptoms(chat_request: dict) -> dict:
-    """
-    第一段：收集症狀
-    每次使用者說話，AI 更新 patient_input 並決定要不要繼續追問
-    """
-    message = chat_request.get("message", "")    # ← 終端機輸入模擬前端傳來的 JSON
-    triage_case = chat_request.get("triage_case")
+def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
+    
+    message = chat_request.message 
+    triage_case = chat_request.triage_case
 
-    # ── 建立或沿用病歷 ──
     if triage_case is None:
-        # 初診：建立全新病歷
         case_id = str(uuid.uuid4())[:8].upper()
-        triage_case = {
-            "case_id": case_id,
-            "history_records": [],
-            "patient_input": {
-                "symptom": "",
-                "body_part": None,
-                "duration": None,
-                "severity": None,
-                "onset": None,
-                "accompanying_symptoms": [],
-                "red_flags": []
-            },
-            "availability": {
-                "available_slots": [],   # list[{"day","session"}]，空=無時段限制
-                "can_take_leave": False
-            },
-            "preferences": {
-                "specialty_priority": True,
-                "doctor_preference": "不限",
-                "hospital_preference": "台北榮總"
-            },
-            "triage": {
-                "urgency_score": None,
-                "urgency_level": None,
-                "warning_required": False,
-                "warning_message": None,
-                "need_more_info": True,
-                "next_question": None
-            },
-            "conversation_state": {
-                "stage": "collecting",
-                "is_complete": False
-            },
-            "department_result": None
-        }
+        triage_case = TriageCase(case_id=case_id)
         print(f"  建立新病歷：{case_id}")
     else:
-        print(f"  沿用病歷：{triage_case.get('case_id')}")
+        print(f"  沿用病歷：{triage_case.case_id}")
 
-    # ── 把使用者說的話加進對話紀錄 ──
-    triage_case["history_records"].append({
-        "role": "user",
-        "content": message
-    })
+    triage_case.history_records.append(HistoryRecord(role="user", content=message))
 
-    # ── 組對話歷史給 AI 看 ──
     history_str = ""
-    for msg in triage_case["history_records"]:
-        role_label = "使用者" if msg["role"] == "user" else "助理"
-        history_str += f"{role_label}：{msg['content']}\n"
+    for msg in triage_case.history_records:
+        role_label = "使用者" if msg.role == "user" else "助理"
+        history_str += f"{role_label}：{msg.content}\n"
 
-    # ── 現有的 patient_input ──
-    current_input = triage_case["patient_input"]
 
-    # ── 呼叫 AI 更新 patient_input、判斷急迫性、決定要不要繼續問 ──
+    current_input = triage_case.patient_input
+
     prompt = f"""你是台北榮民總醫院的分診助理，正在透過對話收集病患症狀。
 
 目前對話紀錄：
 {history_str}
 
 目前已收集到的症狀資料：
-{json.dumps(current_input, ensure_ascii=False, indent=2)}
+{current_input.model_dump_json(indent=2)}
 
 你的任務：
 1. 根據對話更新症狀資料
-2. 每次都要依「台灣急診五級檢傷分類(TTAS) 民眾衛教版」判斷急迫程度（級數數字越小越嚴重）：
+2. 每次都要依「台灣急診五級檢傷分類(TTAS) 民眾衛教版」判斷急迫程度（級數數字越小越嚴重），規則如下：
 
 【重 → 立即急診】(urgency_level=high, urgency_score=90)　＝ TTAS 第一、二級
   第一級 復甦急救（立即處理）：
@@ -129,27 +79,32 @@ def collect_symptoms(chat_request: dict) -> dict:
     - 毒氣或其他氣體吸入，無呼吸窘迫徵象
     - 急產（宮縮>2分鐘）
     
-
 【輕 → 一般門診】(urgency_level=low, urgency_score=20)　＝ TTAS 第四、五級
-  其餘所有狀況一律歸此類（一般症狀、輕微不適、慢性回診、拿藥），不需特別列舉
-3. 判斷資料是否足夠（至少要有 symptom + body_part + duration + serverity(詢問，要求使用者回答症狀輕微、中等、還是劇烈？) + onset + accompanying_symptoms）
-4. 如果不夠，提出下一個最重要的問題
-5. 如果已經足夠，把 is_complete 設為 true
+  只要沒有明確命中上面「重」(第一、二級) 或「中」(第三級) 清單裡的項目，一律歸此類。
 
-注意：
-- red_flags 填入觸發「重」（第一、二級）的症狀描述（沒有就空陣列）
-- 問題要用白話，讓長輩聽得懂
-- 每次只問一個問題，回答過的問題就不用重複問
-- 使用者有時會回答兩個以上可以做為判斷資料的回答
-- 如果是「重」(high)，不論資料是否齊全，立刻設 is_complete 為 true、warning_required 為 true，
-  reply 直接告知請立即前往急診，不要再追問任何問題
+【TTAS 判級的原則】
+1. 嚴格按上方 TTAS 清單逐條比對：只有症狀「明確符合」清單某一項才判該級。
+2. red_flags 填入觸發「重」（第一、二級）的症狀描述，沒有就空陣列。
 
-回覆格式規定：
-- 還要繼續問：reply 格式必須是「了解，[下一個問題]」，不要多餘廢話
+【資料收集原則】
+1. 足夠條件：必須要有 symptom + body_part + duration + severity（問病患「輕微／中等／劇烈」）+ onset（問「症狀是突然開始，還是慢慢變嚴重」）+
+  accompanying_symptoms。
+2. 不夠 → is_complete=false，只問「下一個」最重要的問題。
+3. 足夠 → is_complete=true。
+4. 問法：每次只問一題、用白話讓長輩聽得懂、已答過的不重複問（病患可能一次答多項）。
+
+【回覆格式規定】
+1. TTAS 判斷為「重」  (high)：reply=「您的狀況可能屬於緊急情況，請立即前往急診就醫。（症狀摘要一句）」
+  例如：您的狀況可能屬於緊急情況，請立即前往急診就醫。（持續胸痛冒冷汗）
+  不論資料是否齊全，立刻設 is_complete=true、warning_required=true，停止追問、不要再問任何問題。
+2. 還要繼續問：reply 格式必須是「了解，[下一個問題]」。
   例如：「了解，請問已經持續幾天了？」
-- 資料收集完成：reply 格式必須是「[症狀摘要，一句話]，建議掛[科別]」
-  例如：「發燒三天、喉嚨痛，建議掛一般內科」
-- 絕對不要說「感謝您的資訊」「祝您早日康復」「我明白了」這類客套話
+3. 資料收集完成且TTAS為「中」(medium)：reply 格式必須是「[症狀摘要，一句話]，建議您盡早就醫」
+  例如：「下腹部疼痛一天、中等程度、伴隨發燒，建議您盡早就醫」
+4. 資料收集完成且TTAS為「低」(low)：reply 格式必須是「[症狀摘要，一句話]」
+  例如：「輕微流鼻水兩天、無發燒」
+5. 上述情況都只摘要病患症狀，不要推薦或提到任何科別，格式也嚴格執行上述規定。
+
 
 請輸出以下 JSON，不要輸出任何其他文字：
 {{
@@ -181,74 +136,77 @@ def collect_symptoms(chat_request: dict) -> dict:
     response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
     print(f"  AI 回應：{response}")
 
+    reply = "抱歉，我沒聽清楚，請再說一次。"
     try:
         ai_result = json.loads(response)
-    except json.JSONDecodeError:
-        print("  JSON 解析失敗，使用預設值")
-        ai_result = {
-            "patient_input": current_input,
-            "conversation_state": {"stage": "collecting", "is_complete": False},
-            "reply": "抱歉，我沒聽清楚，可以再說一次嗎？"
-        }
+        if "patient_input" in ai_result:
+            new_pi = PatientInput(**ai_result["patient_input"])
+            new_pi.age = triage_case.patient_input.age       
+            new_pi.gender = triage_case.patient_input.gender
+            triage_case.patient_input = new_pi
+        if "conversation_state" in ai_result:
+            triage_case.conversation_state = ConversationState(**ai_result["conversation_state"])
+        if "triage" in ai_result:        
+            triage_case.triage = Triage(**ai_result["triage"])
+        reply = ai_result.get("reply", "")
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        print(f"  AI 回應解析失敗，保留原值：{e}")
 
-    # ── 更新 triage_case ──
-    triage_case["patient_input"] = ai_result.get("patient_input", current_input)
-    triage_case["conversation_state"] = ai_result.get("conversation_state", {
-        "stage": "collecting", "is_complete": False
-    })
-    # 每次都更新急迫性判斷
-    if "triage" in ai_result:
-        triage_case["triage"] = ai_result["triage"]
+    triage_case.history_records.append(HistoryRecord(role="assistant", content=reply))
 
-    # ── 把 AI 的回應加進對話紀錄 ──
-    reply = ai_result.get("reply", "")
-    triage_case["history_records"].append({
-        "role": "assistant",
-        "content": reply
-    })
-
-    is_complete = triage_case["conversation_state"].get("is_complete", False)
-    # ── 組成 TriageResult 回傳 ──
-    triage_result = {
-        "case_id": triage_case["case_id"],
-        "triage_case": triage_case,           
-        "conversation_state": triage_case["conversation_state"],
-        "triage": triage_case["triage"],      
-        "department_result": None,             # 第一段不判斷科別，第二段才填
-        "next_question": None,
-        "reply": reply,                        # AI 這次說的話，前端顯示用
-        "needMoreInfo": not is_complete        # 給前端
-    }
+    is_complete = triage_case.conversation_state.is_complete
+    
+    triage_result = TriageResult(
+        case_id=triage_case.case_id,
+        triage_case=triage_case,
+        conversation_state=triage_case.conversation_state,
+        triage=triage_case.triage,
+        department_result=None,             
+        next_question=None,
+        reply=reply,                        
+        needMoreInfo=not is_complete        
+    )
     return triage_result
 
 
-# 收集就診偏好（availability + preferences）
+BASIC_INFO_QUESTIONS = """請先提供病患基本資料（可以用一段話回答）：
 
-AVAILABILITY_QUESTIONS = """請回答以下四個問題（可以用數字列點或一段話回答）：
+1. 【年齡】請填數字（例如：45）
+2. 【性別】請填 男 / 女"""
 
-1. 【方便看診時段】您哪幾天的哪個時段方便看診？請把「星期」和「時段」一起說。
-   時段只有早上 / 下午 / 夜診三種。
+
+def parse_basic_info(chat_request: ChatRequest) -> TriageCase:
+    answer = chat_request.message
+    triage_case = chat_request.triage_case or TriageCase(case_id=str(uuid.uuid4())[:8].upper())
+
+    m = re.search(r"\d+", answer)                       
+    triage_case.patient_input.age = int(m.group()) if m else None
+    if "男" in answer:
+        triage_case.patient_input.gender = "男"
+    elif "女" in answer:
+        triage_case.patient_input.gender = "女"
+
+    return triage_case
+
+
+AVAILABILITY_QUESTIONS = f"""請回答以下三個問題（可以用一段話回答）：
+
+1. 【方便看診時段】您哪幾天的哪個時段方便看診？請把「星期」和「時段」一起回答。
+   時段有 {SESSIONS_DESC} 三種。
    （例如：週二早上、週三下午、週四早上和下午）
 
-2. 【能否請假】如果看診時間在平常日，您方便請假嗎？
-   （請回答：可以 / 不可以）
-
-3. 【看診考量】您希望「掛到最準確的科別（科別優先）」，
+2. 【看診考量】您希望「掛到最準確的科別（科別優先）」，
    還是「盡快有門診可以看（時間優先）」？
    （請回答：科別 / 時間）
 
-4. 【指定醫師】有沒有特別想看的醫師？
+3. 【指定醫師】有沒有特別想看的醫師？
    （有就填醫師名字，沒有請填「不限」）"""
 
 
-def parse_availability_answer(user_answer: str, triage_case: dict) -> dict:
-    """
-    使用者一次回答四個問題後，AI 解析並填入對應欄位：
-    available_slots → list[{"day","session"}]（可看診的「星期+時段」組合）
-    can_take_leave  → bool（能否請假）
-    specialty_priority → bool（True=科別優先, False=時間優先）
-    doctor_preference → str（指定醫師或不限）
-    """
+def parse_availability_answer(chat_request: ChatRequest) -> TriageCase:
+    user_answer = chat_request.message          
+    triage_case = chat_request.triage_case       
+
     prompt = f"""病患回答了以下就診偏好問題：
 「{user_answer}」
 
@@ -256,18 +214,16 @@ def parse_availability_answer(user_answer: str, triage_case: dict) -> dict:
 - 方便看診時段 → available_slots（「星期+時段」組合的陣列）。
     每一筆是一個 {{"day": "週X", "session": "早上/下午/夜診"}}。
     day 只能是 週一、週二、週三、週四、週五、週六、週日。
-    session 只能是 早上、下午、夜診（沒有「中午」，中午請歸到下午）。
+    session 只能是 早上、下午、夜診。
     要把「週四早上和下午」這種展開成兩筆：{{"day":"週四","session":"早上"}}、{{"day":"週四","session":"下午"}}。
     病患沒說明確時段就回空陣列 []。
-- 能否請假 → can_take_leave（布林，可以=true，不可以=false）
 - 看診考量 → specialty_priority（布林，科別優先=true，時間優先=false，預設 true）
 - 指定醫師 → doctor_preference（字串，有說名字就填名字，沒有填「不限」）
 
 請解析病患回答並輸出以下 JSON，不要輸出任何其他文字：
 {{
   "availability": {{
-    "available_slots": [{{"day": "週X", "session": "早上/下午/夜診"}}],
-    "can_take_leave": true 或 false
+    "available_slots": [{{"day": "週X", "session": "早上/下午/夜診"}}]
   }},
   "preferences": {{
     "specialty_priority": true 或 false,
@@ -278,30 +234,29 @@ def parse_availability_answer(user_answer: str, triage_case: dict) -> dict:
 
     llm = Settings.llm
     response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
-    print(f"  AI 解析回答：{response}")
+    print(f"  AI 回應：{response}")
 
     try:
         ai_result = json.loads(response)
-        triage_case["availability"] = ai_result.get("availability", triage_case["availability"])
-        triage_case["preferences"] = ai_result.get("preferences", triage_case["preferences"])
-    except json.JSONDecodeError:
-        print("  解析失敗，保留預設值")
+        if "availability" in ai_result:
+            triage_case.availability = Availability(**ai_result["availability"])
+        if "preferences" in ai_result:
+            triage_case.preferences = Preferences(**ai_result["preferences"])
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        print(f"  解析失敗，保留預設值：{e}")
 
     return triage_case
 
 
 
-# 主程式（模擬終端機對話）
 def main():
-    print("=" * 50)
-    print("台北榮民總醫院導引系統 ")
-    print("=" * 50)
-
-    get_active_dept_names()
+    print(BASIC_INFO_QUESTIONS)
+    basic_answer = input("\n請回答：").strip()
+    triage_case = parse_basic_info(ChatRequest(message=basic_answer, triage_case=None))
+    print(f"  建立新病歷：{triage_case.case_id}"
+          f"（年齡 {triage_case.patient_input.age}、性別 {triage_case.patient_input.gender}）")
 
     print("\n進入互動模式（輸入 q 結束）\n")
-
-    triage_case = None  # 第一次為 None，之後沿用
 
     while True:
         user_input = input("請輸入您的問題：").strip()
@@ -310,112 +265,90 @@ def main():
         if not user_input:
             continue
 
-        # 組 ChatRequest（模擬前端傳來的 JSON）
-        # 真實情況：前端傳 {"message": "...", "triage_case": {...}}
-        chat_request = {
-            "message": user_input,
-            "triage_case": triage_case
-        }
-
-        # 根據 stage 決定呼叫哪個函式
-        # 這個判斷在真正串 API 後由後端做，你的函式只要根據 triage_case 裡的 stage 決定
-        current_stage = triage_case["conversation_state"]["stage"] if triage_case else "collecting"
+        chat_request = ChatRequest(message=user_input, triage_case=triage_case)
+        current_stage = triage_case.conversation_state.stage if triage_case else "collecting"
 
         if current_stage == "collecting_availability":
-            # ── 使用者回答了就診偏好 ──
-            # 呼叫 parse_availability_answer 解析並存回 triage_case
-            triage_case = parse_availability_answer(user_input, triage_case)
-            triage_case["conversation_state"]["stage"] = "complete"
-            triage_case["conversation_state"]["is_complete"] = True
+            triage_case = parse_availability_answer(chat_request)
+            triage_case.conversation_state.stage = "complete"
+            triage_case.conversation_state.is_complete = True
 
-            urgency = triage_case["triage"].get("urgency_level", "low")
+            urgency = triage_case.triage.urgency_level or "low"
             urgency_label = {"high": " 高（請立即急診）", "medium": " 中（盡快就醫）", "low": " 低（一般門診）"}.get(urgency, urgency)
 
-            # 最終 TriageResult 回傳後端
-            final_result = {
-                "case_id": triage_case["case_id"],
-                "triage_case": triage_case,
-                "conversation_state": triage_case["conversation_state"],
-                "triage": triage_case["triage"],
-                "department_result": None,
-                "next_question": None,
-                "reply": "感謝您的回答，資料已收集完成！",
-                "needMoreInfo": False
-            }
-            print(json.dumps(final_result, ensure_ascii=False, indent=2))
+            
+            final_result = TriageResult(
+                case_id=triage_case.case_id,
+                triage_case=triage_case,
+                conversation_state=triage_case.conversation_state,
+                triage=triage_case.triage,
+                department_result=None,
+                next_question=None,
+                reply="感謝您的回答，資料已收集完成！",
+                needMoreInfo=False
+            )
+            print(final_result.model_dump_json(indent=2))
             print("─" * 50)
             print(f"  急迫程度：{urgency_label}")
-            slots = triage_case['availability']['available_slots']
-            slots_str = "、".join(f"{s['day']}{s['session']}" for s in slots) if slots else "（未指定，不限時段）"
+            slots = triage_case.availability.available_slots
+            slots_str = "、".join(f"{s.day}{s.session}" for s in slots) if slots else "（未指定，不限時段）"
             print(f"  方便時段：{slots_str}")
-            print(f"  能否請假：{triage_case['availability']['can_take_leave']}")
-            print(f"  看診考量：{'科別優先' if triage_case['preferences']['specialty_priority'] else '時間優先'}")
-            print(f"  指定醫師：{triage_case['preferences']['doctor_preference']}")
+            print(f"  看診考量：{'科別優先' if triage_case.preferences.specialty_priority else '時間優先'}")
+            print(f"  指定醫師：{triage_case.preferences.doctor_preference}")
             print("=" * 50)
-            print(" 全部收集完成！triage_case 已回傳後端")
+            print(" 偏好收集完成")
             print("=" * 50)
 
-            # ── 資料流2：自動接續分診與科別推薦 ──
-            preference = "科別優先" if triage_case["preferences"]["specialty_priority"] else "時間優先"
-            recommend_result = recommend({
-                "triage_case": triage_case,   # 同一份病歷直接傳入
-                "preference": preference
-            })
+            
+            preference = "科別優先" if triage_case.preferences.specialty_priority else "時間優先"
+            recommend_result = recommend(RecommendRequest(
+                triage_case=triage_case,   
+                preference=preference
+            ))
             print("\n" + "=" * 50)
-            print(" 資料流2：分診與科別推薦結果（RecommendationResult）")
+            print("分診與科別推薦結果（RecommendationResult）")
             print("=" * 50)
-            # ── 中（TTAS 第三級）：照常推薦，僅加一句提醒 ──
-            if triage_case["triage"].get("urgency_level") == "medium":
+            
+            if triage_case.triage.urgency_level == "medium":
                 print("  緊急程度：中（TTAS 第三級）→ 建議盡快於當日或隔天就診")
-            print(json.dumps(recommend_result, ensure_ascii=False, indent=2))
+            print(recommend_result.model_dump_json(indent=2))
             print("=" * 50)
             print()
             triage_case = None
 
         else:
-            # ── 症狀收集階段（stage = "collecting"）──
             result = collect_symptoms(chat_request)
-            triage_case = result["triage_case"]
+            triage_case = result.triage_case
 
-            # ── 重（TTAS 一、二級）：直接請去急診，停止追問與後續流程 ──
-            if triage_case["triage"].get("urgency_level") == "high":
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-                print("=" * 50)
-                print("   緊急程度：重（疑似 TTAS 第一、二級）")
-                print(f"  {result['reply']}")
-                print("  → 請立即前往急診，本系統不再進行門診推薦")
-                print("=" * 50)
-                print()
+            if triage_case.triage.urgency_level == "high":
+                print(result.model_dump_json(indent=2))
                 triage_case = None
                 continue
 
-            if result["needMoreInfo"]:
-                # 還在收集症狀，reply 裡有下一個問題，回傳給前端顯示
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-                print("─" * 50)
-                print(" 已回傳後端 → 前端顯示 AI 問題")
-                print(f"   AI 問題：{result['reply']}")
-                print("─" * 50)
+            if result.needMoreInfo:
+                print(result.model_dump_json(indent=2))
+                print(f"   AI 問題：{result.reply}")
+               
 
             else:
-                # 症狀收集完成，改 stage 為 collecting_availability
-                # 把就診偏好問題放進 reply 回傳給前端顯示
-                triage_case["conversation_state"]["stage"] = "collecting_availability"
-                combined_reply = f"{result['reply']}\n\n{AVAILABILITY_QUESTIONS}"
-                avail_result = {
-                    "case_id": triage_case["case_id"],
-                    "triage_case": triage_case,
-                    "conversation_state": triage_case["conversation_state"],
-                    "triage": triage_case["triage"],
-                    "department_result": None,
-                    "next_question": None,
-                    # ← 重點：就診偏好問題放在 reply，前端直接顯示這段文字
-                    "reply": combined_reply,
-                    "needMoreInfo": True  # 還需要使用者繼續回答
-                }
-                print(json.dumps(avail_result, ensure_ascii=False, indent=2))# 把 Python 的字典，打包成標準的 JSON 字串。
+                
+                triage_case.conversation_state.stage = "collecting_availability"
+                combined_reply = f"{result.reply}\n\n{AVAILABILITY_QUESTIONS}"
+                avail_result = TriageResult(
+                    case_id=triage_case.case_id,
+                    triage_case=triage_case,
+                    conversation_state=triage_case.conversation_state,
+                    triage=triage_case.triage,
+                    department_result=None,
+                    next_question=None,
+                    reply=combined_reply,
+                    needMoreInfo=True  
+                )
+                print(avail_result.model_dump_json(indent=2))
                 print("─" * 50)
-                print(" 症狀收集完成，請再回答reply就診偏好問題")
+                print(f"AI回覆：{avail_result.reply}")   
+                print("─" * 50)
+                print(" 症狀收集完成，請再回答就診偏好問題")
                 print("─" * 50)
 
 
