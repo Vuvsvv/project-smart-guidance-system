@@ -19,7 +19,9 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ThumbUp
@@ -55,6 +57,7 @@ import com.example.medicalaiguidance.viewmodel.DoctorViewModel
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -239,8 +242,7 @@ private fun FilterSummaryCard(
             modifier = Modifier.fillMaxSize()
         ) {
             Icon(
-                //imageVector = Icons.Default.Person,
-                imageVector = Icons.Default.Schedule,
+                imageVector = if (mode == DoctorRecommendationMode.SPECIALTY_FIRST) Icons.Filled.MedicalServices else Icons.Default.Schedule,
                 contentDescription = null,
                 // 背景浮水印感
                 tint = Color(0xFFABCBC4).copy(alpha = 0.5f),

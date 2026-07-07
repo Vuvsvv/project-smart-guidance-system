@@ -46,8 +46,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.ThumbDown
-import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -64,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -85,6 +84,7 @@ import com.example.medicalaiguidance.navigation.Route
 import com.example.medicalaiguidance.util.AudioPlayer
 import com.example.medicalaiguidance.viewmodel.ChatViewModel
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 @Composable
 fun ChatScreen(
@@ -97,7 +97,7 @@ fun ChatScreen(
         colors = listOf(Color(0xFFF5F9F9), Color(0xFFE8F2F1), Color(0xFFF8FAFA))
     )
     val primaryDark = Color(0xFF2F6F73)
-    val hintGray = Color(0xFF7B8588)
+    val hintGray = Color(0xFF8FA3A6)
     val micBgColor = Color(0xFFE5F2F2)
 
     val messages by viewModel.messages.collectAsState()
@@ -107,6 +107,8 @@ fun ChatScreen(
     val showDecisionButtons by viewModel.showDecisionButtons.collectAsState()
     val speakingMessageId by viewModel.speakingMessageId.collectAsState()
     var selectedLanguage by remember { mutableStateOf("國語") }
+    var isInputFocused by remember { mutableStateOf(false) }
+    val canSendMessage = inputText.isNotBlank() && !isAiThinking
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -191,15 +193,28 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(
+        messages.lastOrNull()?.id,
+        isAiThinking,
+        showDecisionButtons,
+        inputText,
+        isInputFocused
+    ) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            val conversationStartIndex = messages.indexOfLast { it.sender == MessageSender.USER }
+                .takeIf { it >= 0 }
+                ?: messages.lastIndex
+            delay(80)
+            listState.animateScrollToItem(conversationStartIndex)
+            if (isInputFocused || isAiThinking || showDecisionButtons) {
+                delay(220)
+                listState.animateScrollToItem(conversationStartIndex)
+            }
         }
     }
 
     val performSendMessage = {
-        if (inputText.isNotBlank() && !isAiThinking) {
-            keyboardController?.hide()
+        if (canSendMessage) {
             viewModel.sendMessage {
                 navController.navigate(Route.SELECT_DOCTOR)
             }
@@ -212,221 +227,240 @@ fun ChatScreen(
             .background(bgGradient)
             .imePadding()
     ) {
-        Column(
+        // ---- Message list (bottom layer) ----
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            if (messages.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 150.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "不舒服嗎？請告訴我",
+                        color = primaryDark,
+                        fontSize = 27.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    end = 18.dp,
+                    top = 16.dp,
+                    bottom = 152.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom)
+            ) {
+                items(messages, key = { it.id }) { msg ->
+                    val isUser = msg.sender == MessageSender.USER
+                    val isLastMessage = msg.id == messages.lastOrNull()?.id
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        RealBubbleItem(
+                            messageContent = msg.content,
+                            isUser = isUser,
+                            primaryDark = primaryDark,
+                            isSpeaking = speakingMessageId == msg.id,
+                            onSpeakClicked = {
+                                viewModel.speakMessage(
+                                    message = msg,
+                                    audioPlayer = audioPlayer,
+                                    cacheDir = context.cacheDir,
+                                    lang = currentVoiceLang
+                                )
+                            }
+                        )
+
+                        if (showDecisionButtons && !isUser && isLastMessage) {
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 })
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    ChatActionButton(
+                                        text = "看推薦醫生",
+                                        containerColor = primaryDark,
+                                        contentColor = Color.White,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            viewModel.chooseRecommendation()
+                                            navController.navigate(Route.SELECT_DOCTOR)
+                                        }
+                                    )
+                                    ChatActionButton(
+                                        text = "我想修改",
+                                        containerColor = Color(0xFFD5E5E5),
+                                        contentColor = primaryDark,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { viewModel.continueEditing() }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (isAiThinking) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(Color.White, shape = RoundedCornerShape(18.dp))
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = primaryDark,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "AI 正在分析...",
+                                color = primaryDark,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                item(key = "chat_bottom_anchor") {
+                    Spacer(modifier = Modifier.height(1.dp))
+                }
+            }
+        }
+
+        // ----頂部遮罩層 漸進式變淡 Header (floating overlay, fades to transparent) ----
+        Row(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFF5F9F9).copy(alpha = 0.95f),
+                            Color(0xFFEBF3F2).copy(alpha = 0.75f),
+                            Color(0xFFEBF3F2).copy(alpha = 0.35f),
+                            Color(0xFFF8FAFA).copy(alpha = 0f)
+                        )
+                    )
+                )
                 .statusBarsPadding()
+                .padding(horizontal = 22.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp))
+                    .background(Color.White, shape = RoundedCornerShape(16.dp))
+                    .clickable { navController.popBackStack() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = primaryDark,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            LanguageToggle(
+                selectedLanguage = selectedLanguage,
+                onLanguageSelected = { selectedLanguage = it },
+                primaryDark = primaryDark,
+                selectedColor = micBgColor
+            )
+        }
+
+        // ---- Input bar (floating overlay at bottom) ----
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
+                .heightIn(min = 68.dp, max = 112.dp)
+                .shadow(elevation = 8.dp, shape = RoundedCornerShape(34.dp))
+                .background(Color.White, shape = RoundedCornerShape(34.dp))
+                .padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 22.dp, vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .shadow(elevation = 4.dp, shape = RoundedCornerShape(16.dp))
-                        .background(Color.White, shape = RoundedCornerShape(16.dp))
-                        .clickable { navController.popBackStack() },
+                        .size(52.dp)
+                        .background(
+                            color = if (isListening) Color(0xFFE74C3C) else micBgColor,
+                            shape = CircleShape
+                        )
+                        .clickable { handleMicClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = primaryDark,
-                        modifier = Modifier.size(22.dp)
+                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                        contentDescription = "語音輸入",
+                        tint = if (isListening) Color.White else primaryDark,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(14.dp))
 
-                LanguageToggle(
-                    selectedLanguage = selectedLanguage,
-                    onLanguageSelected = { selectedLanguage = it },
-                    primaryDark = primaryDark,
-                    selectedColor = micBgColor
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                if (messages.isEmpty()) {
-                    Box(
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 6.dp)
+                ) {
+                    if (inputText.isEmpty()) {
+                        Text(
+                            text = if (isListening) "正在聆聽..." else "點我詢問",
+                            color = hintGray,
+                            fontSize = 18.sp
+                        )
+                    }
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { viewModel.onInputTextChanged(it) },
+                        maxLines = 3,
+                        textStyle = TextStyle(color = primaryDark, fontSize = 18.sp),
+                        cursorBrush = SolidColor(primaryDark),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { performSendMessage() }),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 64.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "不舒服嗎？請告訴我",
-                            color = primaryDark,
-                            fontSize = 27.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom)
-                ) {
-                    items(messages, key = { it.id }) { msg ->
-                        val isUser = msg.sender == MessageSender.USER
-                        val isLastMessage = msg.id == messages.lastOrNull()?.id
-
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            RealBubbleItem(
-                                messageContent = msg.content,
-                                isUser = isUser,
-                                primaryDark = primaryDark,
-                                isSpeaking = speakingMessageId == msg.id,
-                                onSpeakClicked = {
-                                    viewModel.speakMessage(
-                                        message = msg,
-                                        audioPlayer = audioPlayer,
-                                        cacheDir = context.cacheDir,
-                                        lang = currentVoiceLang
-                                    )
-                                }
-                            )
-
-                            if (showDecisionButtons && !isUser && isLastMessage) {
-                                AnimatedVisibility(
-                                    visible = true,
-                                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 })
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 12.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                    ) {
-                                        ChatActionButton(
-                                            text = "看推薦醫生",
-                                            containerColor = primaryDark,
-                                            contentColor = Color.White,
-                                            modifier = Modifier.weight(1f),
-                                            onClick = {
-                                                viewModel.chooseRecommendation()
-                                                navController.navigate(Route.SELECT_DOCTOR)
-                                            }
-                                        )
-                                        ChatActionButton(
-                                            text = "我想修改",
-                                            containerColor = Color(0xFFD5E5E5),
-                                            contentColor = primaryDark,
-                                            modifier = Modifier.weight(1f),
-                                            onClick = { viewModel.continueEditing() }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (isAiThinking) {
-                        item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(Color.White, shape = RoundedCornerShape(18.dp))
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = primaryDark,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "AI 正在分析...",
-                                    color = primaryDark,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
-                    .heightIn(min = 78.dp, max = 126.dp)
-                    .shadow(elevation = 10.dp, shape = RoundedCornerShape(40.dp))
-                    .background(Color.White, shape = RoundedCornerShape(40.dp))
-                    .padding(start = 8.dp, end = 24.dp, top = 6.dp, bottom = 6.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(58.dp)
-                            .background(
-                                color = if (isListening) Color(0xFFE74C3C) else micBgColor,
-                                shape = CircleShape
-                            )
-                            .clickable { handleMicClick() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = "語音輸入",
-                            tint = if (isListening) Color.White else primaryDark,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(18.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 8.dp)
-                    ) {
-                        if (inputText.isEmpty()) {
-                            Text(
-                                text = if (isListening) "正在聆聽..." else "點我詢問",
-                                color = hintGray,
-                                fontSize = 18.sp
-                            )
-                        }
-                        BasicTextField(
-                            value = inputText,
-                            onValueChange = { viewModel.onInputTextChanged(it) },
-                            maxLines = 3,
-                            textStyle = TextStyle(color = primaryDark, fontSize = 18.sp),
-                            cursorBrush = SolidColor(primaryDark),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { performSendMessage() }),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "送出",
-                        tint = if (isAiThinking) Color.LightGray else primaryDark,
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clickable { performSendMessage() }
+                            .onFocusChanged { isInputFocused = it.isFocused }
                     )
                 }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "送出",
+                    tint = if (canSendMessage) primaryDark else Color.LightGray,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clickable(enabled = canSendMessage) { performSendMessage() }
+                )
             }
         }
     }
@@ -441,7 +475,7 @@ fun RealBubbleItem(
     onSpeakClicked: () -> Unit = {}
 ) {
     val warningOrange = Color(0xFFE6A23C)
-    val inactiveIcon = Color(0xFFCCCCCC)
+    val inactiveIcon = Color(0xFF8FA3A6)
     val bubbleShape = if (isUser) {
         RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 4.dp)
     } else {
@@ -537,30 +571,6 @@ fun RealBubbleItem(
                             color = if (isSpeaking) primaryDark else inactiveIcon,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ThumbUp,
-                            contentDescription = "有幫助",
-                            tint = inactiveIcon,
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clickable { }
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ThumbDown,
-                            contentDescription = "沒有幫助",
-                            tint = inactiveIcon,
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clickable { }
                         )
                     }
                 }
@@ -675,3 +685,4 @@ fun ChatActionButton(
         )
     }
 }
+

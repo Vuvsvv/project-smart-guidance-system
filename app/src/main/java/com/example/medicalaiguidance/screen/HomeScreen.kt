@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.*
@@ -266,12 +265,12 @@ fun RecordItem(
 
         // 狀態 Badge (未完成/已完成)
         Surface(
-            color = if (isUncompleted) Color(0xFFEBEFEF) else Color(0xFFD1E9E3),
+            color = if (isUncompleted) Color(0xFFFDF6EC) else Color(0xFFD1E9E3),
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
                 text = if (isUncompleted) "未完成" else "已完成",
-                color = if (isUncompleted) Color(0xFF7A8B8B) else Color(0xFF385E5E),
+                color = if (isUncompleted) Color(0xFFE6A23C) else Color(0xFF385E5E),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)

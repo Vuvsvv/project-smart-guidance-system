@@ -283,7 +283,7 @@ class MedicalRepository(
 
     fun getCurrentDepartmentLabel(): String? =
         currentDepartment?.let { department ->
-            department.clinicName.ifBlank { department.name }
+            department.name.ifBlank { department.clinicName }
         }
 
     fun addMessage(message: ChatMessage) {
@@ -351,7 +351,7 @@ class MedicalRepository(
     }
 
     fun getConfirmedAppointment(): Appointment {
-        val department = currentDepartment ?: departments[0]
+        val department = (currentDepartment ?: departments[0]).toConfirmNeedDepartment()
         val doctor = currentDoctor ?: doctors[0]
         val visitDate = upcomingDateFor(currentDayOfWeek)
         return Appointment(
@@ -364,6 +364,16 @@ class MedicalRepository(
         )
     }
 }
+
+private fun Department.toConfirmNeedDepartment(): Department {
+    val nameLooksLikeParent = name.isParentDepartmentLabel()
+    val parentDept = if (nameLooksLikeParent) name else clinicName.ifBlank { name }
+    val childDept = if (nameLooksLikeParent) clinicName.ifBlank { name } else name.ifBlank { clinicName }
+    return copy(name = parentDept, clinicName = childDept)
+}
+
+private fun String.isParentDepartmentLabel(): Boolean =
+    this in setOf("\u4E00\u822C\u5167\u79D1", "\u5916\u79D1\u7CFB", "\u5A66\u5E7C", "\u4E94\u5B98\u79D1", "\u5176\u4ED6\u79D1")
 
 private fun todayText(): String =
     SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date())

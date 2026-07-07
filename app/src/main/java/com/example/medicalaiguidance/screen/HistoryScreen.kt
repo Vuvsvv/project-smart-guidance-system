@@ -298,7 +298,7 @@ fun HistoryCardItem(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Psychology,
+                        imageVector = if (isCompleted) history.icon else Icons.Default.Psychology,
                         contentDescription = null,
                         tint = primaryDark,
                         modifier = Modifier.size(24.dp)
@@ -309,7 +309,7 @@ fun HistoryCardItem(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        history.typeTitle,
+                        text = if (isCompleted) history.typeTitle else "症狀評估中",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1A2E2E),
