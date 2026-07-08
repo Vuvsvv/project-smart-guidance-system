@@ -4,6 +4,7 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
+    android:packageNames="tw.com.bicom.VGHTPE"
     android:description="@string/accessibility_desc"
     android:notificationTimeout="20"
     android:settingsActivity="com.example.medicalaiguidance.MainActivity" />

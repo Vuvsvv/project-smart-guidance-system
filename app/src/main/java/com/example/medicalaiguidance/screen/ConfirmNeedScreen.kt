@@ -165,7 +165,8 @@ fun ConfirmNeedScreen(
                                     department = targetDept,
                                     clinic = targetClinic,
                                     doctor = targetDoctor,
-                                    date = currentApt.date
+                                    date = currentApt.date,
+                                    timeSlot = targetTime
                                 )
                                 val packageName = "tw.com.bicom.VGHTPE"
                                 val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)

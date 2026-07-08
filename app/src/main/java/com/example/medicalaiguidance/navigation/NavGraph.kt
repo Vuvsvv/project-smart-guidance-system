@@ -12,6 +12,7 @@ import com.example.medicalaiguidance.screen.ConfirmNeedScreen
 import com.example.medicalaiguidance.screen.DoctorSelectionScreen
 import com.example.medicalaiguidance.screen.HistoryScreen
 import com.example.medicalaiguidance.screen.HomeScreen
+import com.example.medicalaiguidance.screen.MockScheduleTestScreen
 import com.example.medicalaiguidance.viewmodel.HistoryViewModel
 
 object Route {
@@ -21,6 +22,7 @@ object Route {
     const val SELECT_DOCTOR = "select_doctor"
     const val CONFIRM_NEED = "confirm_need"
     const val HISTORY = "history"
+    const val MOCK_SCHEDULE_TEST = "mock_schedule_test"
 
     fun chatHistory(historyId: String): String = "chat/$historyId"
 }
@@ -60,6 +62,10 @@ fun NavGraph(navController: NavHostController) {
         composable(Route.HISTORY) {
             val historyViewModel: HistoryViewModel = viewModel()
             HistoryScreen(navController = navController, viewModel = historyViewModel)
+        }
+
+        composable(Route.MOCK_SCHEDULE_TEST) {
+            MockScheduleTestScreen(navController = navController)
         }
     }
 }

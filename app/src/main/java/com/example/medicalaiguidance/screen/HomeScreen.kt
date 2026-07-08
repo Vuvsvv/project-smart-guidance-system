@@ -146,6 +146,27 @@ fun HomeScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .shadow(2.dp, RoundedCornerShape(28.dp))
+                    .background(Color.White, RoundedCornerShape(28.dp))
+                    .clickable {
+                        navController.navigate(Route.MOCK_SCHEDULE_TEST)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "紅框位置測試",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryDark
+                )
+            }
+
             Spacer(modifier = Modifier.height(48.dp))
 
             // 標題與「查看全部」
