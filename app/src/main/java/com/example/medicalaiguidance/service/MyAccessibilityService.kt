@@ -50,6 +50,7 @@ class MyAccessibilityService : AccessibilityService() {
     private var script = listOf<String>()
     private var lastHighlightAt = 0L
     private var lastScrollHintAt = 0L
+    private var waitingForPersonalDataExit = false
 
     private val calendar = java.util.Calendar.getInstance()
     private val rocYear = calendar.get(java.util.Calendar.YEAR) - 1911
@@ -90,9 +91,21 @@ class MyAccessibilityService : AccessibilityService() {
             shouldUpdateScript = false
         }
 
-        val packageName = event.packageName?.toString() ?: rootInActiveWindow?.packageName?.toString() ?: ""
-        if (packageName != VGH_PACKAGE_NAME) {
+        val activePackageName = rootInActiveWindow?.packageName?.toString().orEmpty()
+        val eventPackageName = event.packageName?.toString().orEmpty()
+        if (activePackageName == VGH_PACKAGE_NAME) {
+            if (eventPackageName.isNotBlank() && eventPackageName != VGH_PACKAGE_NAME) {
+                Log.d("vgh_id_detect", "忽略非榮總事件，前景仍是榮總 eventPackage=$eventPackageName")
+            }
+        } else if (activePackageName.isNotBlank()) {
             overlay?.hide()
+            Log.d("vgh_id_detect", "目前前景不是榮總App，隱藏紅框 package=$activePackageName")
+            return
+        } else if (eventPackageName.isNotBlank() && eventPackageName != VGH_PACKAGE_NAME &&
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ) {
+            overlay?.hide()
+            Log.d("vgh_id_detect", "離開榮總App，隱藏紅框 package=$eventPackageName")
             return
         }
 
@@ -159,7 +172,38 @@ class MyAccessibilityService : AccessibilityService() {
             currentStepIndex++
         }
 
+        if (waitingForPersonalDataExit) {
+            if (isPersonalDataFormVisible(allNodes)) {
+                overlay?.hide()
+                Log.d("vgh_id_detect", "等待使用者離開個資表單")
+                return
+            }
+            waitingForPersonalDataExit = false
+            Log.d("vgh_id_detect", "已離開個資表單，繼續確認送出步驟")
+        }
+
+        if (shouldEnterPersonalDataWaiting(allNodes)) {
+            val submitIndex = script.indexOf("確認送出")
+            if (submitIndex >= 0) currentStepIndex = submitIndex
+            waitingForPersonalDataExit = true
+            overlay?.hide()
+            Log.d("vgh_id_detect", "已進入個資表單，等待使用者填完並離開")
+            return
+        }
+
         val finalKeyword = script[currentStepIndex]
+        if (isPrivatePersonalDataStep(finalKeyword)) {
+            val submitNode = findBestMatch(allNodes, "確認送出")
+            if (submitNode != null) {
+                currentStepIndex = script.indexOf("確認送出")
+                highlight(submitNode.rect)
+            } else {
+                overlay?.hide()
+                Log.d("vgh_id_detect", "個資輸入段落隱藏紅框 keyword=$finalKeyword")
+            }
+            return
+        }
+
         if (finalKeyword.isCalendarDayNumber()) {
             val nextKeyword = script.getOrNull(currentStepIndex + 1)
             val nextNode = nextKeyword?.let { findBestMatch(allNodes, it) }
@@ -211,6 +255,12 @@ class MyAccessibilityService : AccessibilityService() {
         if (currentTarget != null) {
             highlight(currentTarget.rect)
         } else {
+            if (finalKeyword == "確認送出") {
+                overlay?.hide()
+                Log.d("vgh_id_detect", "等待確認送出出現")
+                return
+            }
+
             if (isClinicStep(finalKeyword)) {
                 showScrollHint("找不到「$finalKeyword」，請往下滑")
                 hideOverlayIfStable()
@@ -469,6 +519,28 @@ class MyAccessibilityService : AccessibilityService() {
         pendingDoctor?.isNotBlank() == true &&
             keyword == pendingDoctor &&
             currentStepIndex == script.indexOf(pendingDoctor)
+
+    private fun isPrivatePersonalDataStep(keyword: String): Boolean =
+        keyword == "請輸入身分證號" ||
+            keyword == "請輸入病患姓名" ||
+            keyword == "民國${rocYear}年" ||
+            keyword == "${month}月" ||
+            keyword == "${day}日"
+
+    private fun shouldEnterPersonalDataWaiting(nodes: List<NodeData>): Boolean {
+        val personalStartIndex = script.indexOf("填寫個人資料")
+        val submitIndex = script.indexOf("確認送出")
+        if (personalStartIndex < 0 || submitIndex < 0) return false
+        if (currentStepIndex < personalStartIndex || currentStepIndex >= submitIndex) return false
+        return isPersonalDataFormVisible(nodes)
+    }
+
+    private fun isPersonalDataFormVisible(nodes: List<NodeData>): Boolean {
+        val hasIdField = nodes.any { it.text.trim() == "身分證號" || it.text.trim() == "請輸入身分證號" }
+        val hasNameField = nodes.any { it.text.trim() == "姓名" || it.text.trim() == "請輸入病患姓名" }
+        val hasBirthdayField = nodes.any { it.text.trim() == "出生年月日" }
+        return hasIdField && hasNameField && hasBirthdayField
+    }
 
     private fun findExactVisibleTextNode(nodes: List<NodeData>, keyword: String): NodeData? =
         nodes.asSequence()
