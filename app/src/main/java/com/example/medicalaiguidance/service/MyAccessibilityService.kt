@@ -205,7 +205,7 @@ class MyAccessibilityService : AccessibilityService() {
                 overlay?.hide()
                 advanceStep("進入行事曆頁，先隱藏舊紅框")
             } else {
-            val nextNode = findBestMatch(allNodes, nextKeyword)
+                val nextNode = findBestMatch(allNodes, nextKeyword)
                 if (nextNode != null) {
                     advanceStep("下一步目標已出現")
                 }
