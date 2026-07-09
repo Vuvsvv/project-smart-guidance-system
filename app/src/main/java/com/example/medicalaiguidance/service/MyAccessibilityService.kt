@@ -9,6 +9,7 @@ import android.util.Log
 class MyAccessibilityService : AccessibilityService() {
     companion object {
         private const val VGH_PACKAGE_NAME = "tw.com.bicom.VGHTPE"
+        private const val SCROLL_HINT_GRACE_MS = 800L
 
         private var pendingDepartment: String? = null
         private var pendingClinic: String? = null
@@ -33,15 +34,6 @@ class MyAccessibilityService : AccessibilityService() {
             shouldUpdateScript = true
         }
 
-        /*fun resetTarget() {
-            forceReset = true
-            pendingDepartment = null
-            pendingClinic = null
-            pendingDoctor = null
-            pendingDate = null
-            pendingTimeSlot = null
-            shouldUpdateScript = false
-        }*/
     }
 
     private var overlay: OverlayManager? = null
@@ -51,6 +43,9 @@ class MyAccessibilityService : AccessibilityService() {
     private var lastHighlightAt = 0L
     private var lastScrollHintAt = 0L
     private var waitingForPersonalDataExit = false
+    private var hasLeftVghApp = false
+    private var stepEnteredAt = 0L
+    private var trackedStepIndex = 0
 
     private val calendar = java.util.Calendar.getInstance()
     private val rocYear = calendar.get(java.util.Calendar.YEAR) - 1911
@@ -77,8 +72,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (forceReset) {
             script = emptyList()
-            currentStepIndex = 0
-            overlay?.hide()
+            resetInteractionState("手動重設", hideOverlay = true)
             forceReset = false
         }
 
@@ -87,24 +81,28 @@ class MyAccessibilityService : AccessibilityService() {
                 pendingDepartment ?: "", pendingClinic ?: "",
                 pendingDoctor ?: "", pendingDate ?: ""
             )
-            currentStepIndex = 0
+            resetInteractionState("更新測試目標", hideOverlay = true)
             shouldUpdateScript = false
         }
 
         val activePackageName = rootInActiveWindow?.packageName?.toString().orEmpty()
         val eventPackageName = event.packageName?.toString().orEmpty()
         if (activePackageName == VGH_PACKAGE_NAME) {
+            if (hasLeftVghApp) {
+                resetInteractionState("重新進入榮總App", hideOverlay = true)
+                hasLeftVghApp = false
+            }
             if (eventPackageName.isNotBlank() && eventPackageName != VGH_PACKAGE_NAME) {
                 Log.d("vgh_id_detect", "忽略非榮總事件，前景仍是榮總 eventPackage=$eventPackageName")
             }
         } else if (activePackageName.isNotBlank()) {
-            overlay?.hide()
+            markLeftVghApp(activePackageName)
             Log.d("vgh_id_detect", "目前前景不是榮總App，隱藏紅框 package=$activePackageName")
             return
         } else if (eventPackageName.isNotBlank() && eventPackageName != VGH_PACKAGE_NAME &&
             event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         ) {
-            overlay?.hide()
+            markLeftVghApp(eventPackageName)
             Log.d("vgh_id_detect", "離開榮總App，隱藏紅框 package=$eventPackageName")
             return
         }
@@ -128,7 +126,44 @@ class MyAccessibilityService : AccessibilityService() {
         super.onDestroy()
         overlay?.hide()
     }
+
+    private fun markLeftVghApp(packageName: String) {
+        hasLeftVghApp = true
+        overlay?.hide()
+        Log.d("vgh_id_detect", "標記已離開榮總App package=$packageName")
+    }
+
+    private fun resetInteractionState(reason: String, hideOverlay: Boolean) {
+        currentStepIndex = 0
+        trackedStepIndex = 0
+        stepEnteredAt = System.currentTimeMillis()
+        isDialogOpen = false
+        waitingForPersonalDataExit = false
+        lastHighlightAt = 0L
+        lastScrollHintAt = 0L
+        if (hideOverlay) overlay?.hide()
+        Log.d("vgh_id_detect", "重設紅框流程 reason=$reason")
+    }
+
+    private fun moveToStep(index: Int, reason: String) {
+        val boundedIndex = index.coerceIn(0, script.lastIndex.coerceAtLeast(0))
+        if (currentStepIndex == boundedIndex) return
+        currentStepIndex = boundedIndex
+        trackedStepIndex = boundedIndex
+        stepEnteredAt = System.currentTimeMillis()
+        Log.d("vgh_id_detect", "切換紅框步驟 index=$boundedIndex keyword=${script.getOrNull(boundedIndex)} reason=$reason")
+    }
+
+    private fun advanceStep(reason: String) {
+        moveToStep(currentStepIndex + 1, reason)
+    }
+
     private fun handleStep(node: AccessibilityNodeInfo) {
+        if (trackedStepIndex != currentStepIndex) {
+            trackedStepIndex = currentStepIndex
+            stepEnteredAt = System.currentTimeMillis()
+        }
+
         val allNodes = findAllTextNodes(node)
         if (allNodes.isEmpty()) {
             hideOverlayIfStable()
@@ -150,11 +185,15 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         if (isCalendarDayStep && currentStepIndex + 1 < script.size) {
-            val selectedCalendarDay = findBestMatch(allNodes, currentKeyword)?.isSelected == true
             val nextKeyword = script[currentStepIndex + 1]
-            val nextNode = findBestMatch(allNodes, nextKeyword)
-            if (selectedCalendarDay && nextNode != null) {
-                currentStepIndex++
+            val nextIsDoctor = nextKeyword.isPendingDoctorKeyword()
+            val nextNode = if (nextIsDoctor) {
+                findDoctorInSession(allNodes, nextKeyword)
+            } else {
+                findBestMatch(allNodes, nextKeyword)
+            }
+            if (nextNode != null && isTargetAppointmentDateSelected(allNodes, currentKeyword)) {
+                advanceStep("日期已選且下一步出現")
             }
         }
 
@@ -162,14 +201,19 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (!isWaitStep && currentStepIndex + 1 < script.size) {
             val nextKeyword = script[currentStepIndex + 1]
+            if (nextKeyword.isCalendarDayNumber() && isClinicCalendarVisible(allNodes)) {
+                overlay?.hide()
+                advanceStep("進入行事曆頁，先隱藏舊紅框")
+            } else {
             val nextNode = findBestMatch(allNodes, nextKeyword)
-            if (nextNode != null || (nextKeyword.isCalendarDayNumber() && isClinicCalendarVisible(allNodes))) {
-                currentStepIndex++
+                if (nextNode != null) {
+                    advanceStep("下一步目標已出現")
+                }
             }
         }
 
         if (isDepartmentStep(script[currentStepIndex]) && isSubClinicPickerVisible(allNodes)) {
-            currentStepIndex++
+            advanceStep("子科別選單已開啟")
         }
 
         if (waitingForPersonalDataExit) {
@@ -184,7 +228,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (shouldEnterPersonalDataWaiting(allNodes)) {
             val submitIndex = script.indexOf("確認送出")
-            if (submitIndex >= 0) currentStepIndex = submitIndex
+            if (submitIndex >= 0) moveToStep(submitIndex, "進入個資表單後等待確認送出")
             waitingForPersonalDataExit = true
             overlay?.hide()
             Log.d("vgh_id_detect", "已進入個資表單，等待使用者填完並離開")
@@ -195,7 +239,7 @@ class MyAccessibilityService : AccessibilityService() {
         if (isPrivatePersonalDataStep(finalKeyword)) {
             val submitNode = findBestMatch(allNodes, "確認送出")
             if (submitNode != null) {
-                currentStepIndex = script.indexOf("確認送出")
+                moveToStep(script.indexOf("確認送出"), "個資段落跳到確認送出")
                 highlight(submitNode.rect)
             } else {
                 overlay?.hide()
@@ -206,12 +250,28 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (finalKeyword.isCalendarDayNumber()) {
             val nextKeyword = script.getOrNull(currentStepIndex + 1)
-            val nextNode = nextKeyword?.let { findBestMatch(allNodes, it) }
-            if (nextNode != null) {
-                currentStepIndex++
-                highlight(nextNode.rect)
-            } else if (!isDialogOpen) {
-                hideOverlayIfStable()
+            val nextIsDoctor = nextKeyword.isPendingDoctorKeyword()
+            val nextNode = nextKeyword?.let {
+                if (nextIsDoctor) findDoctorInSession(allNodes, it) else findBestMatch(allNodes, it)
+            }
+            if (isTargetAppointmentDateSelected(allNodes, finalKeyword)) {
+                if (nextKeyword != null) advanceStep("日期已選，進入下一步")
+                if (nextNode != null) {
+                    highlight(nextNode.rect)
+                } else if (nextIsDoctor && nextKeyword != null) {
+                    showScrollHint("溫馨提醒：請往下滑找到「$nextKeyword」")
+                } else {
+                    overlay?.hide()
+                }
+                return
+            }
+
+            val calendarDayNode = findCalendarDayTarget(allNodes, finalKeyword)
+            if (calendarDayNode != null) {
+                highlight(calendarDayNode.rect)
+            } else {
+                overlay?.hide()
+                Log.d("vgh_id_detect", "行事曆日期未找到，等待使用者選日期 keyword=$finalKeyword")
             }
             return
         }
@@ -225,7 +285,7 @@ class MyAccessibilityService : AccessibilityService() {
             if (departmentTarget != null) {
                 highlight(departmentTarget.rect)
             } else {
-                showScrollHint("溫馨提醒：請在初診預約找到「$finalKeyword」")
+                showScrollHintWhenStepStable("溫馨提醒：請在初診預約找到「$finalKeyword」")
             }
             return
         }
@@ -279,7 +339,7 @@ class MyAccessibilityService : AccessibilityService() {
                     val futureKeyword = script[currentStepIndex + i]
                     val futureNode = findBestMatch(allNodes, futureKeyword)
                     if (futureNode != null) {
-                        currentStepIndex += i
+                        moveToStep(currentStepIndex + i, "找到後續步驟")
                         highlight(futureNode.rect)
                         foundFuture = true
                         break
@@ -292,7 +352,7 @@ class MyAccessibilityService : AccessibilityService() {
                 val prevKeyword = script[currentStepIndex - 1]
                 val prevNode = findBestMatch(allNodes, prevKeyword)
                 if (prevNode != null) {
-                    currentStepIndex--
+                    moveToStep(currentStepIndex - 1, "回到前一步")
                     highlight(prevNode.rect)
                     return
                 }
@@ -415,6 +475,137 @@ class MyAccessibilityService : AccessibilityService() {
         return hasMonthTitle && weekdayCount >= 5 && hasClinicSession
     }
 
+    private fun findCalendarDayTarget(nodes: List<NodeData>, dayText: String): NodeData? {
+        val exactNode = findBestMatch(nodes, dayText)
+        if (exactNode != null) return exactNode
+
+        val inferredRect = inferCalendarDayRect(nodes, dayText.toIntOrNull() ?: return null)
+        if (inferredRect != null) {
+            Log.d("vgh_id_detect", "行事曆日期使用推算座標 keyword=$dayText rect=${inferredRect.toShortString()}")
+            return NodeData(dayText, inferredRect)
+        }
+        return null
+    }
+
+    private fun isTargetAppointmentDateSelected(nodes: List<NodeData>, dayText: String): Boolean {
+        val targetDay = dayText.toIntOrNull() ?: return false
+        val visibleNodes = nodes.filter { it.isOnScreen() }
+        val monthTitle = visibleNodes
+            .filter { it.text.contains("月") && it.text.contains("202") }
+            .minByOrNull { it.rect.top }
+
+        val selectedTopCardDay = monthTitle?.let { title ->
+            visibleNodes
+                .filter { node -> node.text.trim().toIntOrNull()?.let { it in 1..31 } == true }
+                .filter { it.rect.centerY() < title.rect.centerY() }
+                .maxByOrNull { it.rect.height() * it.rect.width() }
+                ?.text
+                ?.trim()
+                ?.toIntOrNull()
+        }
+        if (selectedTopCardDay != null) {
+            val matched = selectedTopCardDay == targetDay
+            Log.d(
+                "vgh_id_detect",
+                "行事曆目前選取日 topCard=$selectedTopCardDay target=$targetDay matched=$matched"
+            )
+            return matched
+        }
+
+        val selectedCalendarDay = visibleNodes
+            .filter { it.isSelected }
+            .mapNotNull { it.text.trim().toIntOrNull() }
+            .firstOrNull { it in 1..31 }
+        if (selectedCalendarDay != null) {
+            val matched = selectedCalendarDay == targetDay
+            Log.d(
+                "vgh_id_detect",
+                "行事曆目前選取日 selectedNode=$selectedCalendarDay target=$targetDay matched=$matched"
+            )
+            return matched
+        }
+
+        Log.d("vgh_id_detect", "行事曆目前選取日無法判斷 target=$targetDay")
+        return false
+    }
+
+    private fun inferCalendarDayRect(nodes: List<NodeData>, targetDay: Int): Rect? {
+        val visibleNodes = nodes.filter { it.isOnScreen() }
+        val monthTitle = visibleNodes
+            .filter { it.text.contains("月") && it.text.contains("202") }
+            .minByOrNull { it.rect.top }
+            ?: return null
+
+        val weekdayLabels = setOf("週日", "週一", "週二", "週三", "週四", "週五", "週六")
+        val weekdayRow = visibleNodes
+            .filter { it.text.trim() in weekdayLabels }
+            .filter { it.rect.top > monthTitle.rect.bottom }
+            .filter { it.rect.top < monthTitle.rect.bottom + 220 }
+            .groupBy { it.rect.centerY() / 50 }
+            .values
+            .maxByOrNull { row -> row.map { it.text.trim() }.distinct().size }
+            ?: return null
+
+        val weekdayByText = weekdayRow
+            .groupBy { it.text.trim() }
+            .mapValues { (_, nodesInColumn) ->
+                nodesInColumn.minWithOrNull(
+                    compareBy<NodeData> { it.rect.width() * it.rect.height() }
+                        .thenBy { it.rect.top }
+                )
+            }
+        val appointmentWeekdayNodes = listOf("週一", "週二", "週三", "週四", "週五", "週六")
+            .map { label -> weekdayByText[label] ?: return null }
+
+        val yearMonth = pendingDate.toYearMonthOrNull() ?: return null
+        val dayOfWeek = dayOfWeekOfDate(yearMonth.first, yearMonth.second, targetDay)
+        if (dayOfWeek == java.util.Calendar.SUNDAY) {
+            Log.d("vgh_id_detect", "行事曆日期略過週日 keyword=$targetDay")
+            return null
+        }
+        val firstDayColumn = firstDayColumnOfMonth(yearMonth.first, yearMonth.second)
+        val zeroBasedIndex = firstDayColumn + targetDay - 1
+        val row = zeroBasedIndex / 7
+        val column = dayOfWeek - java.util.Calendar.MONDAY
+
+        val xCenter = appointmentWeekdayNodes[column].rect.centerX()
+        val weekdayBottom = weekdayRow.maxOf { it.rect.bottom }
+        val numberNodes = visibleNodes
+            .filter { node -> node.text.trim().toIntOrNull()?.let { it in 1..31 } == true }
+            .filter { it.rect.top > weekdayBottom }
+
+        val cellHeight = numberNodes
+            .map { it.rect.centerY() }
+            .distinct()
+            .sorted()
+            .zipWithNext { a, b -> b - a }
+            .filter { it > 20 }
+            .minOrNull() ?: 66
+        val firstRowY = numberNodes
+            .filter { it.text.trim().toIntOrNull() in 1..7 }
+            .minOfOrNull { it.rect.centerY() }
+            ?: (weekdayBottom + cellHeight)
+        val yCenter = firstRowY + row * cellHeight
+        val size = 58
+
+        val screenWidth = android.content.res.Resources.getSystem().displayMetrics.widthPixels
+        val screenHeight = android.content.res.Resources.getSystem().displayMetrics.heightPixels
+        val rect = Rect(
+            xCenter - size / 2,
+            yCenter - size / 2,
+            xCenter + size / 2,
+            yCenter + size / 2
+        )
+        if (rect.left < 0 || rect.right > screenWidth || rect.top <= monthTitle.rect.bottom || rect.bottom > screenHeight) {
+            return null
+        }
+        Log.d(
+            "vgh_id_detect",
+            "行事曆日期使用週一到週六推算 keyword=$targetDay row=$row column=$column rect=${rect.toShortString()}"
+        )
+        return rect
+    }
+
     private fun isDepartmentStep(keyword: String): Boolean =
         pendingDepartment?.isNotBlank() == true &&
             keyword == pendingDepartment &&
@@ -520,6 +711,9 @@ class MyAccessibilityService : AccessibilityService() {
             keyword == pendingDoctor &&
             currentStepIndex == script.indexOf(pendingDoctor)
 
+    private fun String?.isPendingDoctorKeyword(): Boolean =
+        pendingDoctor?.isNotBlank() == true && this == pendingDoctor
+
     private fun isPrivatePersonalDataStep(keyword: String): Boolean =
         keyword == "請輸入身分證號" ||
             keyword == "請輸入病患姓名" ||
@@ -607,6 +801,15 @@ class MyAccessibilityService : AccessibilityService() {
         Log.d("vgh_id_detect", "提示使用者滑動: $message")
     }
 
+    private fun showScrollHintWhenStepStable(message: String) {
+        val elapsed = System.currentTimeMillis() - stepEnteredAt
+        if (elapsed < SCROLL_HINT_GRACE_MS) {
+            Log.d("vgh_id_detect", "延後滑動提示 elapsed=${elapsed}ms message=$message")
+            return
+        }
+        showScrollHint(message)
+    }
+
     private fun findAllTextNodes(root: AccessibilityNodeInfo): List<NodeData> {
         val result = mutableListOf<NodeData>()
         traverse(root, result)
@@ -691,6 +894,34 @@ private fun String.toAppointmentDayText(): String {
 
 private fun String.isCalendarDayNumber(): Boolean =
     toIntOrNull()?.let { it in 1..31 } == true
+
+private fun String?.toYearMonthOrNull(): Pair<Int, Int>? {
+    val normalized = this?.trim().orEmpty().replace('-', '/')
+    val parts = normalized.split('/')
+    if (parts.size < 2) return null
+    val year = parts.getOrNull(0)?.toIntOrNull() ?: return null
+    val month = parts.getOrNull(1)?.toIntOrNull() ?: return null
+    if (month !in 1..12) return null
+    return year to month
+}
+
+private fun firstDayColumnOfMonth(year: Int, month: Int): Int {
+    val calendar = java.util.Calendar.getInstance(java.util.Locale.TAIWAN).apply {
+        set(java.util.Calendar.YEAR, year)
+        set(java.util.Calendar.MONTH, month - 1)
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+    }
+    return calendar.get(java.util.Calendar.DAY_OF_WEEK) - java.util.Calendar.SUNDAY
+}
+
+private fun dayOfWeekOfDate(year: Int, month: Int, day: Int): Int {
+    val calendar = java.util.Calendar.getInstance(java.util.Locale.TAIWAN).apply {
+        set(java.util.Calendar.YEAR, year)
+        set(java.util.Calendar.MONTH, month - 1)
+        set(java.util.Calendar.DAY_OF_MONTH, day)
+    }
+    return calendar.get(java.util.Calendar.DAY_OF_WEEK)
+}
 
 private fun String.normalizedLabel(): String =
     filterNot { it.isWhitespace() }
