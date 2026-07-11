@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -131,10 +132,23 @@ fun DoctorSelectionScreen(
                     verticalArrangement = Arrangement.spacedBy(20.dp) // 加寬卡片間距
                 ) {
                     item {
-                        FilterSummaryCard(
-                            primaryDark = primaryDark,
-                            mode = state.mode
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
+                            FilterSummaryCard(
+                                primaryDark = primaryDark,
+                                mode = state.mode
+                            )
+                            Text(
+                                text = "班表更新可能有誤差，實際名額以醫院當下系統為準。",
+                                color = Color(0xFF738286),
+                                fontSize = 14.sp,
+                                lineHeight = 19.sp,
+                                fontWeight =FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp)
+                            )
+                        }
                     }
 
                     if (state.recommendations.isNotEmpty()) {
@@ -764,24 +778,24 @@ private fun DoctorSpecialtyContent(
 
             // 專長區塊
             SectionPill(
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.ThumbUp,
-                        contentDescription = null,
-                        tint = accentOrange,
-                        modifier = Modifier.size(22.dp)
-                    )
-                },
-                title = "專長",
-                accentColor = accentOrange
-            )
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.ThumbUp,
+                            contentDescription = null,
+                            tint = accentOrange,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    title = "專長",
+                    accentColor = accentOrange
+                )
 
-            Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-            ProfileBulletList(
-                items = specialtyItems,
-                textDark = textDark
-            )
+                ProfileBulletList(
+                    items = specialtyItems,
+                    textDark = textDark
+                )
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -870,8 +884,8 @@ private fun DoctorSpecialtyContent(
                     }
                 }
             }
-        }
     }
+}
 }
 
 //ProfileBulletList 繪製帶有點點（•）的清單

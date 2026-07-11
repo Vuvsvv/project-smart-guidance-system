@@ -256,7 +256,10 @@ class MyAccessibilityService : AccessibilityService() {
             }
             if (isTargetAppointmentDateSelected(allNodes, finalKeyword)) {
                 if (nextKeyword != null) advanceStep("日期已選，進入下一步")
-                if (nextNode != null) {
+                val unavailableStatus = nextKeyword?.let { findDoctorUnavailableStatus(allNodes, it) }
+                if (nextIsDoctor && nextKeyword != null && unavailableStatus != null) {
+                    showUnavailableSessionHint(nextKeyword, unavailableStatus)
+                } else if (nextNode != null) {
                     highlight(nextNode.rect)
                 } else if (nextIsDoctor && nextKeyword != null) {
                     showScrollHint("溫馨提醒：請往下滑找到「$nextKeyword」")
@@ -302,7 +305,10 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (isDoctorStep(finalKeyword)) {
             val doctorTarget = findDoctorInSession(allNodes, finalKeyword)
-            if (doctorTarget != null) {
+            val unavailableStatus = findDoctorUnavailableStatus(allNodes, finalKeyword)
+            if (unavailableStatus != null) {
+                showUnavailableSessionHint(finalKeyword, unavailableStatus)
+            } else if (doctorTarget != null) {
                 highlight(doctorTarget.rect)
             } else {
                 showScrollHint("溫馨提醒：請往下滑找到「$finalKeyword」")
@@ -785,12 +791,73 @@ class MyAccessibilityService : AccessibilityService() {
         return best
     }
 
+    private fun findDoctorUnavailableStatus(nodes: List<NodeData>, doctorName: String): UnavailableSlotStatus? {
+        val visibleNodes = nodes.filter { it.isOnScreen() }
+        val doctorCandidates = visibleNodes
+            .filter { it.text.contains(doctorName) }
+            .filter { it.text.length <= doctorName.length + 12 }
+
+        if (doctorCandidates.isEmpty()) return null
+
+        val targetSession = pendingTimeSlot.toVisitSessionOrNull()
+        val sessionHeaders = visibleNodes
+            .mapNotNull { node -> node.text.toVisitSessionOrNull()?.let { session -> node to session } }
+            .sortedBy { it.first.rect.centerY() }
+
+        val candidatesInSession = if (targetSession.isNullOrBlank() || sessionHeaders.isEmpty()) {
+            doctorCandidates
+        } else {
+            doctorCandidates.filter { candidate ->
+                val nearestHeader = sessionHeaders
+                    .filter { it.first.rect.centerY() <= candidate.rect.centerY() }
+                    .maxByOrNull { it.first.rect.centerY() }
+                nearestHeader?.second == targetSession
+            }
+        }
+
+        val unavailableStatusNodes = visibleNodes.mapNotNull { node ->
+            node.text.toUnavailableSlotStatusOrNull()?.let { status -> node to status }
+        }
+
+        var matchedStatus: UnavailableSlotStatus? = null
+        val unavailableDoctor = candidatesInSession.firstOrNull { doctor ->
+            val rowNodes = visibleNodes.filter { node ->
+                kotlin.math.abs(node.rect.centerY() - doctor.rect.centerY()) <= 95
+            }
+            val rowText = rowNodes.joinToString("") { it.text }.normalizedLabel()
+            matchedStatus = doctor.text.toUnavailableSlotStatusOrNull()
+                ?: rowText.toUnavailableSlotStatusOrNull()
+                ?: unavailableStatusNodes.firstOrNull { (statusNode, _) ->
+                    kotlin.math.abs(statusNode.rect.centerY() - doctor.rect.centerY()) <= 95
+                }?.second
+            matchedStatus != null
+        }
+
+        val rowDebug = candidatesInSession.map { doctor ->
+            val rowNodes = visibleNodes
+                .filter { node -> kotlin.math.abs(node.rect.centerY() - doctor.rect.centerY()) <= 95 }
+                .sortedBy { it.rect.left }
+            "${doctor.text}:${rowNodes.map { "${it.text}:${it.rect.toShortString()}" }}"
+        }
+        Log.d(
+            "vgh_id_detect",
+            "目標醫師不可掛號檢查 doctor=$doctorName session=${targetSession.orEmpty()} status=${matchedStatus?.label.orEmpty()} " +
+                "matchedDoctor=${unavailableDoctor?.rect?.toShortString()} rows=$rowDebug " +
+                "statuses=${unavailableStatusNodes.map { (node, status) -> "${node.text}/${status.label}:${node.rect.toShortString()}" }}"
+        )
+        return matchedStatus
+    }
+
     private fun List<NodeData>.bestDoctorCandidate(doctorName: String): NodeData? =
         minWithOrNull(
             compareBy<NodeData> { if (it.text.trim() == doctorName) 0 else 1 }
                 .thenBy { it.text.length }
                 .thenBy { it.rect.width() * it.rect.height() }
         )
+
+    private fun showUnavailableSessionHint(doctorName: String, status: UnavailableSlotStatus) {
+        showScrollHint("此診次${doctorName}已${status.label}\n在畫面自行切換其他日期 / 選擇其他醫師")
+    }
 
     private fun showScrollHint(message: String) {
         val now = System.currentTimeMillis()
@@ -870,6 +937,13 @@ private enum class ReservationSection {
     RETURN_VISIT
 }
 
+private enum class UnavailableSlotStatus(val label: String) {
+    FULL("額滿"),
+    LEAVE("請假"),
+    CLOSED("關診"),
+    STOPPED("停診")
+}
+
 private fun NodeData.isOnScreen(): Boolean {
     val screenWidth = android.content.res.Resources.getSystem().displayMetrics.widthPixels
     val screenHeight = android.content.res.Resources.getSystem().displayMetrics.heightPixels
@@ -925,6 +999,21 @@ private fun dayOfWeekOfDate(year: Int, month: Int, day: Int): Int {
 
 private fun String.normalizedLabel(): String =
     filterNot { it.isWhitespace() }
+
+private fun String.isUnavailableSlotText(): Boolean {
+    return toUnavailableSlotStatusOrNull() != null
+}
+
+private fun String.toUnavailableSlotStatusOrNull(): UnavailableSlotStatus? {
+    val value = normalizedLabel()
+    return when {
+        value.contains("請假") -> UnavailableSlotStatus.LEAVE
+        value.contains("關診") -> UnavailableSlotStatus.CLOSED
+        value.contains("停診") || value.contains("停止掛號") -> UnavailableSlotStatus.STOPPED
+        value.contains("額滿") || value.contains("已額滿") || value.contains("預約額滿") -> UnavailableSlotStatus.FULL
+        else -> null
+    }
+}
 
 private fun String.toReservationSectionOrNull(): ReservationSection? {
     val value = trim()

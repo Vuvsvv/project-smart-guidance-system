@@ -44,7 +44,7 @@ fun ConfirmNeedScreen(
     // 新增：控制再次確認彈窗
     var showConfirmDialog by remember { mutableStateOf(false) }
     val primaryDark = Color(0xFF2C4E4E)
-    val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFFF5F9F9), Color(0xFFEBF2F2)))
+    val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFFF2FAF8), Color(0xFFF2FAF8)))
     val cardHeaderGradient = Brush.verticalGradient(colors = listOf(Color(0xFF6E9999), Color(0xFF385E5E)))
 
     // 💡 權限檢查邏輯

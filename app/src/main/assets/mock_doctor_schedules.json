@@ -1,8 +1,8 @@
 [
-  { "date": "2026-07-23", "dayOfWeek": "週四", "timeSlot": "下午診", "doctorName": "林炯熙", "clinicName": "一般內科", "status": "可掛號" },
-  { "date": "2026-07-24", "dayOfWeek": "週五", "timeSlot": "上午診", "doctorName": "林炯熙", "clinicName": "一般內科", "status": "額滿" },
+  { "date": "2026-07-23", "dayOfWeek": "週四", "timeSlot": "下午診", "doctorName": "林炯熙", "clinicName": "一般內科", "status": "額滿" },
+  { "date": "2026-07-24", "dayOfWeek": "週五", "timeSlot": "上午診", "doctorName": "林炯熙", "clinicName": "一般內科", "status": "可掛號" },
   { "date": "2026-07-23", "dayOfWeek": "週四", "timeSlot": "上午診", "doctorName": "葉筱芸", "clinicName": "一般內科", "status": "可掛號" },
-  { "date": "2026-07-20", "dayOfWeek": "週一", "timeSlot": "下午診", "doctorName": "蔡依霖", "clinicName": "一般內科", "status": "可掛號" },
+  { "date": "2026-07-20", "dayOfWeek": "週一", "timeSlot": "下午診", "doctorName": "蔡依霖", "clinicName": "一般內科", "status": "請假" },
   { "date": "2026-07-22", "dayOfWeek": "週三", "timeSlot": "上午診", "doctorName": "侯重光", "clinicName": "一般內科", "status": "可掛號" },
 
   { "date": "2026-07-23", "dayOfWeek": "週四", "timeSlot": "上午診", "doctorName": "盧俊良", "clinicName": "胃腸肝膽科", "status": "可掛號" },

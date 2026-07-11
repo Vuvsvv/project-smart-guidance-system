@@ -8,7 +8,11 @@ import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -47,7 +51,6 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.core.content.ContextCompat
+import com.example.medicalaiguidance.R
 import com.example.medicalaiguidance.model.MessageSender
 import com.example.medicalaiguidance.navigation.Route
 import com.example.medicalaiguidance.util.AudioPlayer
@@ -312,28 +317,9 @@ fun ChatScreen(
                         }
                     }
                 }
-
                 if (isAiThinking) {
                     item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .background(Color.White, shape = RoundedCornerShape(18.dp))
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = primaryDark,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "AI 正在分析...",
-                                color = primaryDark,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        AiThinkingBubble(primaryDark = primaryDark)
                     }
                 }
 
@@ -415,12 +401,21 @@ fun ChatScreen(
                         .clickable { handleMicClick() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = "語音輸入",
-                        tint = if (isListening) Color.White else primaryDark,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    if (isListening) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "停止錄音",
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_mic),
+                            contentDescription = "語音輸入",
+                            tint = primaryDark,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(14.dp))
@@ -454,7 +449,7 @@ fun ChatScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    painter = painterResource(id = R.drawable.ic_send),
                     contentDescription = "送出",
                     tint = if (canSendMessage) primaryDark else Color.LightGray,
                     modifier = Modifier
@@ -463,6 +458,64 @@ fun ChatScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun AiThinkingBubble(primaryDark: Color) {
+    val transition = rememberInfiniteTransition(label = "aiThinkingDots")
+    val dotOffsets = List(3) { index ->
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = -6f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 420, delayMillis = index * 130),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "aiThinkingDot$index"
+        )
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .shadow(
+                elevation = 3.dp,
+                shape = RoundedCornerShape(
+                    topStart = 24.dp,
+                    topEnd = 24.dp,
+                    bottomStart = 4.dp,
+                    bottomEnd = 24.dp
+                )
+            )
+            .background(
+                Color.White,
+                shape = RoundedCornerShape(
+                    topStart = 24.dp,
+                    topEnd = 24.dp,
+                    bottomStart = 4.dp,
+                    bottomEnd = 24.dp
+                )
+            )
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+
+        dotOffsets.forEach { offset ->
+            Text(
+                text = "•",
+                color = primaryDark,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.offset(y = offset.value.dp)
+            )
+        }
+        /*Text(
+            text = "正在分析中請稍後",
+            color = primaryDark,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium
+        )*/2
     }
 }
 

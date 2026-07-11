@@ -6,6 +6,7 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
+import android.text.TextPaint
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -70,7 +71,7 @@ class OverlayManager(private val context: Context) {
         val screenWidth = context.resources.displayMetrics.widthPixels
         val statusBarHeight = context.statusBarHeight()
         val bubbleWidth = (screenWidth * 0.86f).toInt()
-        val bubbleHeight = 72
+        val bubbleHeight = calculateBubbleHeight(message, bubbleWidth)
 
         ensureViews()
         borderView?.visibility = View.GONE
@@ -128,7 +129,12 @@ class OverlayManager(private val context: Context) {
             setTextColor(Color.WHITE)
             textSize = 16f
             gravity = Gravity.CENTER
-            setPadding(18, 0, 18, 0)
+            includeFontPadding = true
+            minHeight = 72
+            setSingleLine(false)
+            maxLines = 5
+            setLineSpacing(2f, 1.0f)
+            setPadding(24, 12, 24, 12)
         }
 
         overlayRoot?.addView(borderView)
@@ -152,6 +158,24 @@ class OverlayManager(private val context: Context) {
         bubbleView?.visibility = View.VISIBLE
         bubbleView?.text = message
         bubbleView?.layoutParams = FrameLayout.LayoutParams(width, height)
+    }
+
+    private fun calculateBubbleHeight(message: String, bubbleWidth: Int): Int {
+        val horizontalPadding = 48
+        val textWidth = (bubbleWidth - horizontalPadding).coerceAtLeast(1)
+        val paint = TextPaint().apply {
+            textSize = 16f * context.resources.displayMetrics.scaledDensity
+        }
+        val lines = message
+            .split('\n')
+            .sumOf { line ->
+                val measured = paint.measureText(line.ifBlank { " " })
+                kotlin.math.ceil(measured / textWidth).toInt().coerceAtLeast(1)
+            }
+            .coerceIn(1, 5)
+        val lineHeight = (paint.fontMetrics.descent - paint.fontMetrics.ascent + 6).toInt()
+        val verticalPadding = 32
+        return (verticalPadding + lines * lineHeight).coerceAtLeast(72)
     }
 }
 

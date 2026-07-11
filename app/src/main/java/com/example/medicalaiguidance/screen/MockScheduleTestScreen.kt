@@ -271,8 +271,7 @@ private fun MockScheduleCard(
 
             Button(
                 onClick = onStart,
-                colors = ButtonDefaults.buttonColors(containerColor = primaryDark),
-                enabled = schedule.status == "可掛號"
+                colors = ButtonDefaults.buttonColors(containerColor = primaryDark)
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
