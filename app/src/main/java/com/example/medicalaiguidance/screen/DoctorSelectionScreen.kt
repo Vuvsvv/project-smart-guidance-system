@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,6 +83,7 @@ fun DoctorSelectionScreen(
             sheetState = sheetState,
             containerColor = Color.White,
             shape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp),
+            sheetMaxWidth = Dp.Unspecified,
             dragHandle = null
         ) {
             DoctorSpecialtyContent(

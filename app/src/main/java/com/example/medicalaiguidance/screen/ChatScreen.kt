@@ -90,7 +90,7 @@ import com.example.medicalaiguidance.util.AudioPlayer
 import com.example.medicalaiguidance.viewmodel.ChatViewModel
 import java.util.Locale
 import kotlinx.coroutines.delay
-
+import androidx.compose.foundation.border
 @Composable
 fun ChatScreen(
     navController: NavHostController,
@@ -292,9 +292,16 @@ fun ChatScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 12.dp),
+                                        .padding(top = 20.dp), // 按鈕與對話框間距
                                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
+                                    ChatActionButton(
+                                        text = "我想修改",
+                                        containerColor = Color(0xFFD5E5E5),
+                                        contentColor = primaryDark,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { viewModel.continueEditing() }
+                                    )
                                     ChatActionButton(
                                         text = "看推薦醫生",
                                         containerColor = primaryDark,
@@ -304,13 +311,6 @@ fun ChatScreen(
                                             viewModel.chooseRecommendation()
                                             navController.navigate(Route.SELECT_DOCTOR)
                                         }
-                                    )
-                                    ChatActionButton(
-                                        text = "我想修改",
-                                        containerColor = Color(0xFFD5E5E5),
-                                        contentColor = primaryDark,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { viewModel.continueEditing() }
                                     )
                                 }
                             }
@@ -374,7 +374,7 @@ fun ChatScreen(
             )
         }
 
-        // ---- Input bar (floating overlay at bottom) ----
+        // ---- 使用者輸入框 Input bar (floating overlay at bottom) ----
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -382,7 +382,12 @@ fun ChatScreen(
                 .navigationBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
                 .heightIn(min = 68.dp, max = 112.dp)
-                .shadow(elevation = 8.dp, shape = RoundedCornerShape(34.dp))
+                .shadow(elevation = 1.dp, shape = RoundedCornerShape(34.dp))
+                .border(
+                    width = 0.5.dp,
+                    color = primaryDark.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(30.dp)
+                )
                 .background(Color.White, shape = RoundedCornerShape(34.dp))
                 .padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
             contentAlignment = Alignment.CenterStart
@@ -481,7 +486,7 @@ fun AiThinkingBubble(primaryDark: Color) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .shadow(
-                elevation = 3.dp,
+                elevation = 1.dp,
                 shape = RoundedCornerShape(
                     topStart = 24.dp,
                     topEnd = 24.dp,
@@ -515,7 +520,7 @@ fun AiThinkingBubble(primaryDark: Color) {
             color = primaryDark,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
-        )*/2
+        )*/
     }
 }
 
@@ -581,14 +586,14 @@ fun RealBubbleItem(
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .shadow(elevation = 3.dp, shape = bubbleShape)
+                .shadow(elevation = 1.dp, shape = bubbleShape)
                 .background(Color.White, shape = bubbleShape)
                 .clip(bubbleShape)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
+                Text(  // AI 回復文字
                     text = messageContent.withBoldDepartment(),
-                    color = primaryDark,
+                    color = primaryDark, //Color(0xFF556666)
                     fontSize = 16.sp,
                     lineHeight = 24.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -725,7 +730,7 @@ fun ChatActionButton(
     Box(
         modifier = modifier
             .height(54.dp)
-            .shadow(elevation = 4.dp, shape = RoundedCornerShape(18.dp))
+            .shadow(elevation = 1.dp, shape = RoundedCornerShape(18.dp))
             .background(containerColor, shape = RoundedCornerShape(18.dp))
             .clickable { onClick() },
         contentAlignment = Alignment.Center

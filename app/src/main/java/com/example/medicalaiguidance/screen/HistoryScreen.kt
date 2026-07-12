@@ -64,8 +64,10 @@ fun HistoryScreen(
     val selectedTab by viewModel.selectedTab.collectAsState()
     val tabs = listOf("全部", "已完成", "未完成")
     val primaryDark = Color(0xFF036A6D)
+    val lightBg = Color(0xFFF2FAF8)
 
     Scaffold(
+        containerColor = lightBg,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { navController.navigate(Route.CHAT) },
@@ -82,7 +84,7 @@ fun HistoryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFFF7F9F9))
+                .background(lightBg)
         ) {
             Header(navController = navController, primaryDark = primaryDark)
             TabSelector(
