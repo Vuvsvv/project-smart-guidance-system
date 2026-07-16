@@ -35,12 +35,15 @@ def recommend_followup(request: FollowupRequest) -> RecommendationResult:
     )
 
 
-FOLLOWUP_QUESTIONS = f"""請回答以下兩個問題（可以用一段話回答）：
+FOLLOWUP_QUESTIONS = f"""請回答以下兩個問題，請「照編號」列點回答 1～2：
 
 1. 【方便看診時段】您哪幾天的哪個時段方便看診？請把「星期」和「時段」一起回答。
-   時段有 {SESSIONS_DESC} 三種。（例如：週二早上、週三下午、週四早上和下午）
+   時段有 {SESSIONS_DESC} 三種。
+   同一天有多個時段請一起寫（例如：週三下午和夜診）。
 
-2. 【指定醫師】有沒有特別想看的醫師？（有就填醫師名字，沒有請填「不限」）"""
+2. 【指定醫師】有沒有特別想看的醫師？（有就填醫師名字，沒有請填「不限」）
+
+範例：1.週二早上、週三下午和夜診、週四早上  2.不限"""
 
 
 def collect_followup(chat_request: FollowupChatRequest) -> FollowupRequest:

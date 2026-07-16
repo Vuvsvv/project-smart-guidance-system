@@ -48,14 +48,14 @@ def _build_items(rows, department_result, tag_scores, matched_specialties, slots
     if sort_by_date:
         items.sort(key=lambda x: x.date)
     elif specialty_priority:
-        items.sort(key=lambda x: (-x.score, x.date))  
+        items.sort(key=lambda x: (-x.score, x.date))
     else:
-        items.sort(key=lambda x: (x.date, -x.score))  
+        items.sort(key=lambda x: (x.date, -x.score))
+
     return items[:5]
 
 
 def _open_rows(child_dept: str) -> list:
-    """查該科可掛班表並擋掉今天已過/快過的時段。"""
     rows = get_available_schedules(child_dept, TODAY)
     return [r for r in rows if _session_open(r)]
 
@@ -145,7 +145,7 @@ def main():
             preferences=Preferences(specialty_priority=True, doctor_preference="不限"),
             triage=Triage(urgency_level="medium", urgency_score=50),
         ),
-        preference="科別優先",
+        preference="醫師專長優先",
     )
 
     result = recommend(demo_request)

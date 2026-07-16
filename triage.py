@@ -1,7 +1,7 @@
 import json
 import re
 import uuid
-from config import Settings
+from config import ask_llm
 from recommend import recommend
 from schedule import SESSIONS_DESC
 from models import (
@@ -87,11 +87,17 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
 2. red_flags 填入觸發「重」（第一、二級）的症狀描述，沒有就空陣列。
 
 【資料收集原則】
-1. 足夠條件：必須要有 symptom + body_part + duration + severity（問病患「輕微／中等／劇烈」）+ onset（問「症狀是突然開始，還是慢慢變嚴重」）+
+1. 病患已先填過「症狀表單」，會在一則訊息裡「照編號」一次答完 1～6，編號對應欄位如下：
+   1→symptom、2→body_part、3→duration、4→severity、5→onset、6→accompanying_symptoms。
+   請照編號對應吸收，不要重複問表單已經答過的；只有真的缺欄位時才追問。
+2. 足夠條件：必須要有 symptom + body_part + duration + severity（問病患「輕微／中等／劇烈」）+ onset（問「症狀是突然開始，還是慢慢變嚴重」）+
   accompanying_symptoms。
-2. 不夠 → is_complete=false，只問「下一個」最重要的問題。
-3. 足夠 → is_complete=true。
-4. 問法：每次只問一題、用白話讓長輩聽得懂、已答過的不重複問（病患可能一次答多項）。
+  (1) body_part：病患答「無」「不知道」「說不清楚」，或症狀本來就沒有特定部位
+    （如發燒、全身無力、疲倦、頭暈）→ 算已回答，body_part 填 null，不要再追問。
+  (2) accompanying_symptoms：病患答「無」也算已回答，填空陣列 [] 即可。
+3. 不夠 → is_complete=false，只問「下一個」最重要的問題。
+4. 足夠 → is_complete=true。
+5. 問法：每次只問一題、用白話讓長輩聽得懂、已答過的不重複問（病患可能一次答多項）。
 
 【回覆格式規定】
 1. TTAS 判斷為「重」  (high)：reply=「您的狀況可能屬於緊急情況，請立即前往急診就醫。（症狀摘要一句）」
@@ -100,7 +106,7 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
 2. 還要繼續問：reply 格式必須是「了解，[下一個問題]」。
   例如：「了解，請問已經持續幾天了？」
 3. 資料收集完成且TTAS為「中」(medium)：reply 格式必須是「[症狀摘要，一句話]，建議您盡早就醫」
-  例如：「下腹部疼痛一天、中等程度、伴隨發燒，建議您盡早就醫」
+  例如：「無法控制的嘔吐一天、中等程度，建議您盡早就醫」（此例對應第三級「無法控制的腹瀉或嘔吐」）
 4. 資料收集完成且TTAS為「低」(low)：reply 格式必須是「[症狀摘要，一句話]」
   例如：「輕微流鼻水兩天、無發燒」
 5. 上述情況都只摘要病患症狀，不要推薦或提到任何科別，格式也嚴格執行上述規定。
@@ -132,8 +138,7 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
   "reply": "對使用者說的話（格式見上方規定）"
 }}"""
 
-    llm = Settings.llm
-    response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
+    response = ask_llm(prompt, "症狀收集", max_tokens=1024)
     print(f"  AI 回應：{response}")
 
     reply = "抱歉，我沒聽清楚，請再說一次。"
@@ -169,17 +174,34 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
     return triage_result
 
 
-BASIC_INFO_QUESTIONS = """請先提供病患基本資料（可以用一段話回答）：
+BASIC_INFO_QUESTIONS = """請先提供病患基本資料，請「照編號」列點回答 1～2：
 
 1. 【年齡】請填數字（例如：45）
-2. 【性別】請填 男 / 女"""
+2. 【性別】請填 男 / 女
+
+範例：1.21  2.男"""
+
+
+SYMPTOM_QUESTIONS = """請描述您的症狀，請「照編號」列點回答 1～6：
+
+1. 【主要症狀】您哪裡不舒服？（例如：肚子痛、頭暈、咳嗽）
+2. 【部位】不舒服的部位在哪裡？（例如：右下腹、後腦杓、胸口；
+   說不出來或沒有特定部位請填「無」）
+3. 【持續多久】這個症狀持續多久了？（例如：2天、一週）
+4. 【嚴重程度】輕微 / 中等 / 劇烈？
+5. 【怎麼開始的】突然開始的，還是慢慢變嚴重的？
+6. 【伴隨症狀】還有沒有其他不舒服？（例如：發燒、拉肚子、想吐；沒有請填「無」）
+
+範例：1.肚子痛  2.右下腹  3.2天  4.中等  5.慢慢變嚴重  6.發燒、拉肚子"""
 
 
 def parse_basic_info(chat_request: ChatRequest) -> TriageCase:
     answer = chat_request.message
     triage_case = chat_request.triage_case or TriageCase(case_id=str(uuid.uuid4())[:8].upper())
 
-    m = re.search(r"\d+", answer)                       
+    cleaned = re.sub(r"(?:^|\s)[12]\s*[.、:：]\s*", " ", answer)
+
+    m = re.search(r"\d+", cleaned)
     triage_case.patient_input.age = int(m.group()) if m else None
     if "男" in answer:
         triage_case.patient_input.gender = "男"
@@ -189,36 +211,45 @@ def parse_basic_info(chat_request: ChatRequest) -> TriageCase:
     return triage_case
 
 
-AVAILABILITY_QUESTIONS = f"""請回答以下三個問題（可以用一段話回答）：
+AVAILABILITY_QUESTIONS = f"""請回答以下三個問題，請「照編號」列點回答 1～3：
 
 1. 【方便看診時段】您哪幾天的哪個時段方便看診？請把「星期」和「時段」一起回答。
    時段有 {SESSIONS_DESC} 三種。
-   （例如：週二早上、週三下午、週四早上和下午）
+   同一天有多個時段請一起寫（例如：週三下午和夜診）。
 
-2. 【看診考量】您希望「掛到最準確的科別（科別優先）」，
+2. 【看診考量】您希望「找專長最對症的醫師（醫師專長優先）」，
    還是「盡快有門診可以看（時間優先）」？
-   （請回答：科別 / 時間）
+   （請回答：醫師專長優先 / 時間優先）
 
 3. 【指定醫師】有沒有特別想看的醫師？
-   （有就填醫師名字，沒有請填「不限」）"""
+   （有就填醫師名字，沒有請填「不限」）
+
+範例：1.週二早上、週三下午和夜診、週四早上  2.醫師專長優先  3.不限"""
 
 
 def parse_availability_answer(chat_request: ChatRequest) -> TriageCase:
     user_answer = chat_request.message          
     triage_case = chat_request.triage_case       
 
-    prompt = f"""病患回答了以下就診偏好問題：
+    prompt = f"""病患回答了以下就診偏好問題（病患會「照編號」列點回答）：
 「{user_answer}」
 
 問題對應的欄位說明：
-- 方便看診時段 → available_slots（「星期+時段」組合的陣列）。
+1.方便看診時段 → available_slots（「星期+時段」組合的陣列）。
     每一筆是一個 {{"day": "週X", "session": "早上/下午/夜診"}}。
     day 只能是 週一、週二、週三、週四、週五、週六、週日。
     session 只能是 早上、下午、夜診。
-    要把「週四早上和下午」這種展開成兩筆：{{"day":"週四","session":"早上"}}、{{"day":"週四","session":"下午"}}。
+    同一天有多個時段就展開成多筆，並「沿用同一個星期」——
+    不管病患用「和」「跟」「、」「，」分隔都一樣。例如：
+      「週四早上和下午」→ {{"day":"週四","session":"早上"}}、{{"day":"週四","session":"下午"}}
+      「週三下午，夜診」→ {{"day":"週三","session":"下午"}}、{{"day":"週三","session":"夜診"}}
+    絕對不可以自己發明星期（例如「不限」）；真的判斷不出星期，就不要輸出那一筆。
     病患沒說明確時段就回空陣列 []。
-- 看診考量 → specialty_priority（布林，科別優先=true，時間優先=false，預設 true）
-- 指定醫師 → doctor_preference（字串，有說名字就填名字，沒有填「不限」）
+2.看診考量 → specialty_priority（布林）
+    病患回答「醫師專長優先」「專長」「醫師」，或表達想看最對症的醫師 → specialty_priority = true
+    病患回答「時間」「時間優先」，或表達想盡快看到 → specialty_priority = false
+    沒提到（複診問卷不會問這題）→ 預設 true
+3.指定醫師 → doctor_preference（字串，有說名字就填名字，沒有填「不限」）
 
 請解析病患回答並輸出以下 JSON，不要輸出任何其他文字：
 {{
@@ -232,8 +263,7 @@ def parse_availability_answer(chat_request: ChatRequest) -> TriageCase:
   }}
 }}"""
 
-    llm = Settings.llm
-    response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
+    response = ask_llm(prompt, "偏好解析", max_tokens=1024)
     print(f"  AI 回應：{response}")
 
     try:
@@ -256,7 +286,9 @@ def main():
     print(f"  建立新病歷：{triage_case.case_id}"
           f"（年齡 {triage_case.patient_input.age}、性別 {triage_case.patient_input.gender}）")
 
-    print("\n進入互動模式（輸入 q 結束）\n")
+    print()
+    print(SYMPTOM_QUESTIONS)
+    print("\n（輸入 q 結束）\n")
 
     while True:
         user_input = input("請輸入您的問題：").strip()
@@ -293,14 +325,14 @@ def main():
             slots = triage_case.availability.available_slots
             slots_str = "、".join(f"{s.day}{s.session}" for s in slots) if slots else "（未指定，不限時段）"
             print(f"  方便時段：{slots_str}")
-            print(f"  看診考量：{'科別優先' if triage_case.preferences.specialty_priority else '時間優先'}")
+            print(f"  看診考量：{'醫師專長優先' if triage_case.preferences.specialty_priority else '時間優先'}")
             print(f"  指定醫師：{triage_case.preferences.doctor_preference}")
             print("=" * 50)
             print(" 偏好收集完成")
             print("=" * 50)
 
             
-            preference = "科別優先" if triage_case.preferences.specialty_priority else "時間優先"
+            preference = "醫師專長優先" if triage_case.preferences.specialty_priority else "時間優先"
             recommend_result = recommend(RecommendRequest(
                 triage_case=triage_case,   
                 preference=preference

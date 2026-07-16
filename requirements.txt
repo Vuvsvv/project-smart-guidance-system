@@ -3,4 +3,4 @@ pyodbc==5.3.0
 python-dotenv==1.2.2
 
 llama-index-core==0.14.20
-llama-index-llms-google-genai==0.9.1
+llama-index-llms-cerebras==0.4.1

@@ -1,5 +1,5 @@
 import json
-from config import Settings
+from config import ask_llm
 from database import get_departments_with_category
 from dept_keywords import count_symptom_coverage
 from models import PatientInput, DepartmentResult, FallbackDepartment
@@ -44,6 +44,11 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
 可選擇的科別清單（必須從中挑一個，parentDept 與 childDept 要完全照抄）：
 {candidate_lines}
 
+【年齡規則】病患 age 未滿 18 歲時（含青少年），請「優先」選擇兒童相關科別
+（父科別為「婦幼」，例如兒童內科、兒童腸胃科、兒童過敏感染…）。
+只有當該症狀在清單裡「沒有對應的兒童科」時（例如皮膚、眼睛沒有兒童版），
+才改選成人科別。age 為 18 以上則一律選成人科別。
+
 【症狀不明確時的處理】
 若病患症狀模糊、非特異、沒有明確器官指向，難以判斷該掛哪一科時，
 導向「家庭醫學科(一般門診/戒菸)」做初步鑑別診斷，
@@ -76,8 +81,7 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
   ]
 }}"""
 
-    llm = Settings.llm
-    response = str(llm.complete(prompt)).strip().replace("```json", "").replace("```", "").strip()
+    response = ask_llm(prompt, "選科", max_tokens=1536)
     print(f"  AI 分診回應：{response}")
 
     try:

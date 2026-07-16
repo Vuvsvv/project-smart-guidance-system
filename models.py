@@ -81,7 +81,7 @@ class TriageResult(BaseModel):
 
 class RecommendRequest(BaseModel):
     triage_case: TriageCase
-    preference: str = "科別優先"          
+    preference: str = "醫師專長優先"
 
 
 class FollowupChatRequest(BaseModel):
