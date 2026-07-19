@@ -3,7 +3,9 @@ package com.example.medicalaiguidance.screen
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,9 +19,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -34,8 +38,7 @@ import com.example.medicalaiguidance.R
 import com.example.medicalaiguidance.navigation.Route
 import com.example.medicalaiguidance.service.MyAccessibilityService
 import com.example.medicalaiguidance.viewmodel.ConfirmViewModel
-import androidx.compose.foundation.border
-import androidx.compose.ui.draw.clip
+
 @Composable
 fun ConfirmNeedScreen(
     navController: NavController,
@@ -46,12 +49,13 @@ fun ConfirmNeedScreen(
 
     // 控制提醒彈窗的顯示
     var showPermissionDialog by remember { mutableStateOf(false) }
-    // 新增：控制再次確認彈窗
+    // 控制再次確認彈窗
     var showConfirmDialog by remember { mutableStateOf(false) }
-    //val primaryDark = Color(0xFF2C4E4E)
+
     val primaryDark = Color(0xFF376F72)
+    val badgeBg = Color(0xFFD9EAE7)
     val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFFF2FAF8), Color(0xFFF2FAF8)))
-    val cardHeaderGradient = Brush.verticalGradient(colors = listOf(Color(0xFF6E9999), Color(0xFF385E5E)))
+
     val fontScale = LocalDensity.current.fontScale
     val cardMinHeight = when {
         fontScale >= 1.3f -> 500.dp
@@ -122,7 +126,6 @@ fun ConfirmNeedScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // [左側次要] 取消按鈕
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -135,7 +138,6 @@ fun ConfirmNeedScreen(
                         Text(text = "取消", color = primaryDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    // [右側主要] 前往設定
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -160,7 +162,7 @@ fun ConfirmNeedScreen(
         )
     }
 
-    //  再次確認視窗
+    // 再次確認視窗
     if (showConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
@@ -185,7 +187,6 @@ fun ConfirmNeedScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // [左側次要] 取消按鈕
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -198,7 +199,6 @@ fun ConfirmNeedScreen(
                         Text(text = "取消", color = primaryDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    // [右側主要] 確認按鈕
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -249,48 +249,99 @@ fun ConfirmNeedScreen(
         }
 
         // 2. 核心大卡片區塊
-        Card(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false)
                 .padding(horizontal = 24.dp, vertical = 8.dp)
-                .heightIn(min = cardMinHeight, max = cardMaxHeight)
-                .shadow(2.dp, RoundedCornerShape(40.dp)),
-            shape = RoundedCornerShape(40.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Box(modifier = Modifier.fillMaxWidth().height(140.dp).background(brush = cardHeaderGradient), contentAlignment = Alignment.Center) {
-                    Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.MedicalServices, null, tint = Color.White, modifier = Modifier.size(42.dp))
+            // 調整：羊咩咩吉祥物
+            Image(
+                painter = painterResource(id = R.drawable.sheep_2),
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (12).dp, y = (-60).dp)
+                    .size(120.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 28.dp) // 調整：從 56.dp 改為 44.dp，使卡片整體往上移動
+                    .heightIn(min = cardMinHeight, max = cardMaxHeight)
+                    .shadow(2.dp, RoundedCornerShape(30.dp))
+                    .border(width = 10.dp, color = badgeBg.copy(alpha = 0.8f), shape = RoundedCornerShape(30.dp)),
+                shape = RoundedCornerShape(30.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(start = 28.dp, top = 36.dp, end = 28.dp)
+                            .background(badgeBg, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "掛號資訊確認",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryDark
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = infoContentMaxHeight)
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 40.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        InfoRowItem(
+                            icon = Icons.Default.LocalHospital,
+                            iconPainter = painterResource(id = R.drawable.ic_hospital),
+                            label = "科別",
+                            title = "$targetDept $targetClinic"
+                        )
+                        HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
+                        InfoRowItem(
+                            icon = Icons.Default.Person,
+                            iconPainter = painterResource(id = R.drawable.ic_doctor),
+                            label = "看診醫師",
+                            title = "$targetDoctor 醫師"
+                        )
+                        HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
+                        InfoRowItem(
+                            icon = Icons.Default.AccessTime,
+                            iconPainter = painterResource(id = R.drawable.ic_time),
+                            label = "預約時間",
+                            title = "$targetDayString $targetTime"
+                        )
                     }
                 }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = infoContentMaxHeight)
-                        .verticalScroll(rememberScrollState())
-                        .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 44.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    InfoRowItem(
-                        icon = Icons.Default.LocalHospital,
-                        iconPainter = painterResource(id = R.drawable.ic_hospital),
-                        label = "科別",
-                        title = "$targetDept $targetClinic"
-                    )
-                    HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
-                    InfoRowItem(
-                        icon = Icons.Default.Accessibility,
-                        iconPainter = painterResource(id = R.drawable.ic_doctor),
-                        label = "看診醫師",
-                        title = "$targetDoctor 醫師"
-                    )
-                    HorizontalDivider(color = Color(0xFFEBF2F2), thickness = 1.dp)
-                    InfoRowItem(Icons.Default.AccessTime, "預約時間", "$targetDayString $targetTime")
-                }
             }
+
+            // 調整：寫字板夾子（放大尺寸，並微調 y 軸 offset 以貼合往上移的卡片）
+            Image(
+                painter = painterResource(id = R.drawable.ic_clip),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(Color(0xFF2C4E4E)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = -3.dp) // 配合卡片上移，將 offset 從 25.dp 調整為 10.dp
+                    .size(width = 130.dp, height = 84.dp) // 尺寸放大 (原本 110 x 70)
+            )
+            /*Image(
+                painter = painterResource(id = R.drawable.sheep_2),
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (12).dp, y = (-55).dp)
+                    .size(120.dp)
+            )*/
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -305,16 +356,11 @@ fun ConfirmNeedScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
-                    //.shadow(2.dp, RoundedCornerShape(28.dp))
-                    //.background(brush = cardHeaderGradient, RoundedCornerShape(20.dp))
                     .background(color = primaryDark, RoundedCornerShape(20.dp))
                     .clickable {
-
                         if (isServiceEnabled()) {
-                            // ✅ 權限已開啟 → 彈出再次確認視窗（不直接跳轉）
                             showConfirmDialog = true
                         } else {
-                            // 權限未開啟 → 彈出權限提示視窗
                             showPermissionDialog = true
                         }
                     },
@@ -328,7 +374,6 @@ fun ConfirmNeedScreen(
             }
 
             // 重新詢問
-            // 【次要按鈕】重新詢問 (Outlined + Icon 視覺平衡優化)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -363,18 +408,6 @@ fun ConfirmNeedScreen(
                     )
                 }
             }
-
-
-            /*Box(
-                modifier = Modifier.fillMaxWidth().height(56.dp).shadow(3.dp, RoundedCornerShape(30.dp))
-                    .background(Color(0xFFD5E5E5), RoundedCornerShape(30.dp))
-                    .clickable {
-                        navController.navigate(Route.CHAT) { popUpTo(Route.HOME) }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("重新詢問", color = primaryDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }*/
         }
     }
 }

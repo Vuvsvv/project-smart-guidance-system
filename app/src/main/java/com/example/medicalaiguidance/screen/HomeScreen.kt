@@ -1,6 +1,7 @@
 package com.example.medicalaiguidance.screen
 
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,10 +32,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
+import com.example.medicalaiguidance.R
 import com.example.medicalaiguidance.model.HistoryStatus
 import com.example.medicalaiguidance.navigation.Route
 import com.example.medicalaiguidance.viewmodel.HomeViewModel
-
+import androidx.compose.ui.draw.alpha
 @Composable
 fun HomeScreen(
     navController: NavHostController,
@@ -80,94 +84,138 @@ fun HomeScreen(
         item {
             Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                text = "您好！",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF4A7373)
-            )
+            // 問候氣泡框與大按鈕用 Box 包起來，跨元件定位與疊加
+            Box(modifier = Modifier.fillMaxWidth()) {
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
 
-            Text(
-                text = "今天有什麼可以幫您？",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = textDarkColor
-            )
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // 💡 醫療指引大按鈕 (1:1 還原圖片設計)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(50.dp),
-                        clip = false,
-                        ambientColor = Color(0xFF385E5E).copy(alpha = 0.3f),
-                        spotColor = Color(0xFF385E5E).copy(alpha = 0.5f)
-                    )
-                    .background(brush = buttonGradient, shape = RoundedCornerShape(50.dp))
-                    .clickable {
-                        navController.navigate(Route.CHAT)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                    // 1. 問候文字氣泡框
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
-                            .background(Color.White.copy(alpha = 0.15f), shape = CircleShape),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            /*.background(
+                                color = Color.White.copy(alpha = 0.3f), // 70% 透明度白底
+                                shape = RoundedCornerShape(
+                                    topStart = 32.dp,
+                                    topEnd = 32.dp,
+                                    bottomEnd = 12.dp, // 讓右下角帶點對話框的切角感
+                                    bottomStart = 32.dp
+                                )
+                            )
+                            .padding(horizontal = 24.dp, vertical = 20.dp)*/
+
+                            .padding(top = 12.dp, bottom = 12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.MedicalServices,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(38.dp)
-                        )
+                        Column {
+                            Text(
+                                text = "Hello",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4A7373)
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "今天有什麼可以幫您？",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textDarkColor
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(15.dp)) // 氣泡與按鈕的間距
 
-                    Text(
-                        text = "開始醫療指引",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        letterSpacing = 2.sp
-                    )
+                    // 2. 醫療指引大按鈕
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .shadow(
+                                elevation = 12.dp,
+                                shape = RoundedCornerShape(50.dp),
+                                clip = false,
+                                ambientColor = Color(0xFF385E5E).copy(alpha = 0.3f),
+                                spotColor = Color(0xFF385E5E).copy(alpha = 0.5f)
+                            )
+                            .background(brush = buttonGradient, shape = RoundedCornerShape(50.dp))
+                            .clickable {
+                                navController.navigate(Route.CHAT)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(Color.White.copy(alpha = 0.15f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MedicalServices,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(38.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Text(
+                                text = "開始醫療指引",
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                letterSpacing = 2.sp
+                            )
+                        }
+                    }
                 }
+
+                // 3. 疊在最上面的小羊（利用 offset 調整微調，壓在按鈕右上角）
+                Image(
+                    painter = painterResource(id = R.drawable.sheep),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(135.dp)
+                        .align(Alignment.TopEnd)
+                        // x 稍微往外移，y 往下移壓在按鈕的交界處
+                        .offset(x = (20).dp, y = (1).dp),
+                    contentScale = ContentScale.Fit
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .shadow(2.dp, RoundedCornerShape(28.dp))
-                    .background(Color.White, RoundedCornerShape(28.dp))
-                    .clickable {
-                        navController.navigate(Route.MOCK_SCHEDULE_TEST)
-                    },
-                contentAlignment = Alignment.Center
+            // 紅框位置測試
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(
-                    text = "紅框位置測試",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryDark
-                )
+                Box(
+                    modifier = Modifier
+                        .shadow(1.dp, RoundedCornerShape(16.dp))
+                        .background(Color.White, RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE0E8E7), RoundedCornerShape(16.dp))
+                        .clickable {
+                            navController.navigate(Route.MOCK_SCHEDULE_TEST)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "紅框位置測試",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = primaryDark
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             // 標題與「查看全部」
             Row(
@@ -176,7 +224,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "近期記錄",
+                    text = "近期紀錄",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = textDarkColor
@@ -207,19 +255,64 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(18.dp))
         }
 
-        // 3️⃣ 渲染動態的近期紀錄列表
-        items(
-            items = recentHistory,
-            key = { it.id }
-        ) { history ->
-            RecordItem(
-                date = history.date,
-                summary = if (history.status == HistoryStatus.UNCOMPLETED) "症狀評估中" else history.typeTitle,
-                icon = if (history.status == HistoryStatus.UNCOMPLETED) Icons.Default.Psychology else history.icon,
-                status = history.status,
-                onClick = { navController.navigate(Route.chatHistory(history.id)) }
+        // 近期紀錄：有資料就渲染清單，沒資料就顯示空狀態
+        if (recentHistory.isEmpty()) {
+            item {
+                EmptyHistoryState()
+            }
+        } else {
+            items(
+                items = recentHistory,
+                key = { it.id }
+            ) { history ->
+                RecordItem(
+                    date = history.date,
+                    summary = if (history.status == HistoryStatus.UNCOMPLETED) "症狀評估中" else history.typeTitle,
+                    icon = if (history.status == HistoryStatus.UNCOMPLETED) Icons.Default.Psychology else history.icon,
+                    status = history.status,
+                    onClick = { navController.navigate(Route.chatHistory(history.id)) }
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyHistoryState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .height(280.dp)
+            .padding(horizontal = 16.dp, vertical = 24.dp) // 避免在平板上直接貼齊邊緣
+            .border(
+                width = 2.dp,
+                color = Color(0xFFD9EAE7),
+                shape = RoundedCornerShape(36.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.sheep_3),
+                contentDescription = null,
+                modifier = Modifier.size(120.dp)
+                .alpha(0.5f),
+                contentScale = ContentScale.Fit
             )
-            Spacer(modifier = Modifier.height(14.dp))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "暫無紀錄",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF7A8B8B)
+            )
         }
     }
 }

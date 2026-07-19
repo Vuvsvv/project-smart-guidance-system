@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -91,6 +92,11 @@ import com.example.medicalaiguidance.viewmodel.ChatViewModel
 import java.util.Locale
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.LayoutDirection
 @Composable
 fun ChatScreen(
     navController: NavHostController,
@@ -225,7 +231,22 @@ fun ChatScreen(
             }
         }
     }
-
+    // 畫一個正下方的倒三角形
+    val TriangleShape = object : Shape {
+        override fun createOutline(
+            size: androidx.compose.ui.geometry.Size,
+            layoutDirection: LayoutDirection,
+            density: androidx.compose.ui.unit.Density
+        ): androidx.compose.ui.graphics.Outline {
+            val path = Path().apply {
+                moveTo(0f, 0f)                         // 左上點
+                lineTo(size.width, 0f)                 // 右上點
+                lineTo(size.width / 2f, size.height)   // 下方尖角點（置中）
+                close()
+            }
+            return androidx.compose.ui.graphics.Outline.Generic(path)
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -241,15 +262,59 @@ fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 150.dp),
+                        .padding(top = 150.dp), // 稍微留點空間給下方的羊
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "不舒服嗎？請告訴我",
-                        color = primaryDark,
-                        fontSize = 27.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+
+                        // 1. 氣泡框主體 + 倒三角組合
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // 圓角文字泡泡 (70% 透明度白底)
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(30.dp) // 還原圖片中非常圓潤的膠囊圓角
+                                    )
+                                    .padding(horizontal = 36.dp, vertical = 24.dp), // 內距拉開讓氣泡飽滿
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "不舒服嗎？請告訴我",
+                                    color = primaryDark,
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // 正下方的倒三角 (同樣繼承 70% 透明度白底)
+                            Box(
+                                modifier = Modifier
+                                    .width(24.dp)   // 三角形的寬度
+                                    .height(12.dp)  // 三角形的高度
+                                    .background(
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        shape = TriangleShape
+                                    )
+                            )
+                        }
+
+                        // 間距推開
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // 🐑 2. 乖乖待在對話框正下方的小羊
+                        Image(
+                            painter = painterResource(id = R.drawable.sheep_4),
+                            contentDescription = null,
+                            modifier = Modifier.size(130.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 }
             }
 
@@ -303,7 +368,7 @@ fun ChatScreen(
                                         onClick = { viewModel.continueEditing() }
                                     )
                                     ChatActionButton(
-                                        text = "看推薦醫生",
+                                        text = "看推薦醫師",
                                         containerColor = primaryDark,
                                         contentColor = Color.White,
                                         modifier = Modifier.weight(1f),
