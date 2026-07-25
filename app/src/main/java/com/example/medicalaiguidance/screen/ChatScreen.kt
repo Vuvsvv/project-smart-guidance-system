@@ -307,7 +307,7 @@ fun ChatScreen(
                         // 間距推開
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // 🐑 2. 乖乖待在對話框正下方的小羊
+                        // 2. 待在對話框正下方
                         Image(
                             painter = painterResource(id = R.drawable.sheep_4),
                             contentDescription = null,
@@ -339,6 +339,7 @@ fun ChatScreen(
                             isUser = isUser,
                             primaryDark = primaryDark,
                             isSpeaking = speakingMessageId == msg.id,
+                            isPlaybackLocked = speakingMessageId != null,
                             onSpeakClicked = {
                                 viewModel.speakMessage(
                                     message = msg,
@@ -595,6 +596,7 @@ fun RealBubbleItem(
     isUser: Boolean,
     primaryDark: Color,
     isSpeaking: Boolean = false,
+    isPlaybackLocked: Boolean = false,
     onSpeakClicked: () -> Unit = {}
 ) {
     val warningOrange = Color(0xFFE6A23C)
@@ -679,7 +681,9 @@ fun RealBubbleItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.clickable { onSpeakClicked() },
+                        modifier = Modifier
+                            .alpha(if (isPlaybackLocked && !isSpeaking) 0.45f else 1f)
+                            .clickable(enabled = !isPlaybackLocked) { onSpeakClicked() },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(

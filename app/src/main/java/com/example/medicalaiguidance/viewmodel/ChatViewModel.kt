@@ -205,6 +205,7 @@ class ChatViewModel(
 
     fun speakMessage(message: ChatMessage, audioPlayer: AudioPlayer, cacheDir: File, lang: String) {
         if (message.sender != MessageSender.AI || message.content.isBlank()) return
+        if (_speakingMessageId.value != null) return
 
         viewModelScope.launch {
             _speakingMessageId.value = message.id
