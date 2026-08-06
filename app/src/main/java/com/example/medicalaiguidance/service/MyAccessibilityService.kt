@@ -6,16 +6,22 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.util.Log
 
+enum class AppointmentType {
+    INITIAL,
+    RETURN_VISIT
+}
+
 class MyAccessibilityService : AccessibilityService() {
     companion object {
         private const val VGH_PACKAGE_NAME = "tw.com.bicom.VGHTPE"
         private const val SCROLL_HINT_GRACE_MS = 800L
-
         private var pendingDepartment: String? = null
         private var pendingClinic: String? = null
         private var pendingDoctor: String? = null
         private var pendingDate: String? = null
         private var pendingTimeSlot: String? = null
+        private var pendingAppointmentType = AppointmentType.INITIAL
+        private var isCancellationFlow = false
         private var shouldUpdateScript = false
         private var forceReset = false
 
@@ -24,16 +30,23 @@ class MyAccessibilityService : AccessibilityService() {
             clinic: String,
             doctor: String,
             date: String,
-            timeSlot: String = ""
+            timeSlot: String = "",
+            appointmentType: AppointmentType = AppointmentType.INITIAL
         ) {
             pendingDepartment = department
             pendingClinic = clinic
             pendingDoctor = doctor
             pendingDate = date
             pendingTimeSlot = timeSlot
+            pendingAppointmentType = appointmentType
+            isCancellationFlow = false
             shouldUpdateScript = true
         }
 
+        fun startCancellationGuidance() {
+            isCancellationFlow = true
+            shouldUpdateScript = true
+        }
     }
 
     private var overlay: OverlayManager? = null
@@ -57,14 +70,28 @@ class MyAccessibilityService : AccessibilityService() {
         overlay = OverlayManager(this)
     }
 
-    private fun generateDynamicScript(department: String, clinic: String, doctor: String, date: String) {
+    private fun generateDynamicScript(
+        department: String,
+        clinic: String,
+        doctor: String,
+        date: String
+    ) {
         val appointmentDay = date.toAppointmentDayText()
-        script = listOf(
+        val baseScript = mutableListOf(
             "行動掛號", "繼續掛號", "依門診科別",
             department, clinic, "選擇看診時間", appointmentDay, doctor,
-            "填寫個人資料", "請輸入身分證號", "請輸入病患姓名",
-            "民國${rocYear}年", "${month}月", "${day}日", "確認送出"
+            "填寫個人資料", "請輸入身分證號"
         )
+
+        if (pendingAppointmentType == AppointmentType.INITIAL) {
+            baseScript.addAll(
+                listOf("請輸入病患姓名", "民國${rocYear}年", "${month}月", "${day}日")
+            )
+        }
+
+        baseScript.add("確認送出")
+        baseScript.add("SUCCESS_FINISH")
+        script = baseScript
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -77,10 +104,14 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         if (shouldUpdateScript) {
-            generateDynamicScript(
-                pendingDepartment ?: "", pendingClinic ?: "",
-                pendingDoctor ?: "", pendingDate ?: ""
-            )
+            if (isCancellationFlow) {
+                script = CancellationGuidance.script
+            } else {
+                generateDynamicScript(
+                    pendingDepartment ?: "", pendingClinic ?: "",
+                    pendingDoctor ?: "", pendingDate ?: ""
+                )
+            }
             resetInteractionState("更新測試目標", hideOverlay = true)
             shouldUpdateScript = false
         }
@@ -170,9 +201,41 @@ class MyAccessibilityService : AccessibilityService() {
             return
         }
 
+        val finishIndex = script.indexOf("SUCCESS_FINISH")
+        val idIndex = script.indexOf("請輸入身分證號")
+        if (finishIndex != -1 && idIndex != -1 && currentStepIndex >= idIndex) {
+            if (isRegistrationSuccessScreen(allNodes)) {
+                if (currentStepIndex < finishIndex) {
+                    moveToStep(finishIndex, "偵測到掛號完成畫面")
+                    overlay?.showMessage("已成功掛號")
+                }
+            }
+        }
+
         if (currentStepIndex >= script.size) return
 
         val currentKeyword = script[currentStepIndex]
+
+        if (isCancellationFlow && CancellationGuidance.isDataEntryStep(currentKeyword)) {
+            val cancelTarget = CancellationGuidance.findTarget(allNodes, "取消")
+            if (cancelTarget != null) {
+                advanceStep("取消掛號資料已確認，顯示取消按鈕")
+                highlight(cancelTarget.rect)
+            } else {
+                overlay?.hide()
+            }
+            return
+        }
+
+        if (currentKeyword == "SUCCESS_FINISH") {
+            val now = System.currentTimeMillis()
+            if (now - lastScrollHintAt > 2500) {
+                lastScrollHintAt = now
+                overlay?.showMessage("已成功掛號")
+            }
+            return
+        }
+
         val yearCount = allNodes.count { it.text.contains("民國") }
         val monthCount = allNodes.count { it.text.contains("月") && it.text.length < 5 }
         val dayCount = allNodes.count { it.text.contains("日") && it.text.length < 5 }
@@ -217,13 +280,18 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         if (waitingForPersonalDataExit) {
-            if (isPersonalDataFormVisible(allNodes)) {
+            val submitNode = findBestMatch(allNodes, "確認送出")
+            if (submitNode != null) {
+                waitingForPersonalDataExit = false
+                Log.d("vgh_id_detect", "確認送出已出現在畫面上，解除個資等待狀態")
+            } else if (isPersonalDataFormVisible(allNodes)) {
                 overlay?.hide()
                 Log.d("vgh_id_detect", "等待使用者離開個資表單")
                 return
+            } else {
+                waitingForPersonalDataExit = false
+                Log.d("vgh_id_detect", "已離開個資表單，繼續確認送出步驟")
             }
-            waitingForPersonalDataExit = false
-            Log.d("vgh_id_detect", "已離開個資表單，繼續確認送出步驟")
         }
 
         if (shouldEnterPersonalDataWaiting(allNodes)) {
@@ -283,12 +351,14 @@ class MyAccessibilityService : AccessibilityService() {
             val departmentTarget = findDepartmentInReservationSection(
                 nodes = allNodes,
                 departmentName = finalKeyword,
-                targetSection = ReservationSection.INITIAL
+                targetSection = pendingAppointmentType.toReservationSection()
             )
             if (departmentTarget != null) {
                 highlight(departmentTarget.rect)
             } else {
-                showScrollHintWhenStepStable("溫馨提醒：請在初診預約找到「$finalKeyword」")
+                showScrollHintWhenStepStable(
+                    "溫馨提醒：請在${pendingAppointmentType.displayName()}找到「$finalKeyword」"
+                )
             }
             return
         }
@@ -366,10 +436,14 @@ class MyAccessibilityService : AccessibilityService() {
             if (!isDialogOpen) hideOverlayIfStable()
         }
     }
-    // ─── 精修核心：findBestMatch ───
+
     private fun findBestMatch(nodes: List<NodeData>, keyword: String): NodeData? {
         if (keyword.isBlank()) return null
         val visibleNodes = nodes.filter { it.isOnScreen() }
+
+        if (isCancellationFlow) {
+            CancellationGuidance.findTarget(nodes, keyword)?.let { return it }
+        }
 
         if (keyword.isCalendarDayNumber()) {
             val calendarNumberNodes = visibleNodes
@@ -390,13 +464,6 @@ class MyAccessibilityService : AccessibilityService() {
                 compareBy<NodeData> { kotlin.math.abs(it.rect.centerY() - 520) }
                     .thenBy { it.rect.width() * it.rect.height() }
             )
-            Log.d(
-                "vgh_id_detect",
-                "行事曆日期比對 keyword=$keyword top=$calendarTop bottom=$calendarBottom " +
-                    "allNumbers=${calendarNumberNodes.map { "${it.text}:${it.rect.toShortString()}" }} " +
-                    "candidates=${exactCalendarDayNodes.map { it.rect.toShortString() }} " +
-                    "best=${bestCalendarDay?.rect?.toShortString()}"
-            )
             return bestCalendarDay
         }
 
@@ -404,7 +471,6 @@ class MyAccessibilityService : AccessibilityService() {
             return visibleNodes.find { it.text.contains(keyword) }
         }
 
-        // 找出所有包含關鍵字的節點
         val matches = visibleNodes.filter { it.text.contains(keyword) }
         if (matches.isEmpty()) return null
 
@@ -433,16 +499,14 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 如果遇到容易被長段落注意事項干擾的關鍵字，加入嚴格的字數限制篩選 (避免抓到內文說明)
         val filteredMatches = if (keyword == "選擇看診時間 / 醫師" || keyword.length >= 6) {
-            matches.filter { it.text.length <= keyword.length + 6 } // 限制抓到的節點字數長度不能比關鍵字多太多
+            matches.filter { it.text.length <= keyword.length + 6 }
         } else {
             matches
         }
 
         if (filteredMatches.isEmpty()) return null
 
-        // 依權重排序：完全符合(Trim後)優先 > 字串長度短優先（排除長文章） > 面積小優先（避免抓到外層Layout）
         val bestMatch = filteredMatches.minWithOrNull(
             compareBy<NodeData> { if (it.text.trim() == keyword) 0 else 1 }
                 .thenBy { it.text.length }
@@ -487,7 +551,6 @@ class MyAccessibilityService : AccessibilityService() {
 
         val inferredRect = inferCalendarDayRect(nodes, dayText.toIntOrNull() ?: return null)
         if (inferredRect != null) {
-            Log.d("vgh_id_detect", "行事曆日期使用推算座標 keyword=$dayText rect=${inferredRect.toShortString()}")
             return NodeData(dayText, inferredRect)
         }
         return null
@@ -510,12 +573,7 @@ class MyAccessibilityService : AccessibilityService() {
                 ?.toIntOrNull()
         }
         if (selectedTopCardDay != null) {
-            val matched = selectedTopCardDay == targetDay
-            Log.d(
-                "vgh_id_detect",
-                "行事曆目前選取日 topCard=$selectedTopCardDay target=$targetDay matched=$matched"
-            )
-            return matched
+            return selectedTopCardDay == targetDay
         }
 
         val selectedCalendarDay = visibleNodes
@@ -523,15 +581,8 @@ class MyAccessibilityService : AccessibilityService() {
             .mapNotNull { it.text.trim().toIntOrNull() }
             .firstOrNull { it in 1..31 }
         if (selectedCalendarDay != null) {
-            val matched = selectedCalendarDay == targetDay
-            Log.d(
-                "vgh_id_detect",
-                "行事曆目前選取日 selectedNode=$selectedCalendarDay target=$targetDay matched=$matched"
-            )
-            return matched
+            return selectedCalendarDay == targetDay
         }
-
-        Log.d("vgh_id_detect", "行事曆目前選取日無法判斷 target=$targetDay")
         return false
     }
 
@@ -566,7 +617,6 @@ class MyAccessibilityService : AccessibilityService() {
         val yearMonth = pendingDate.toYearMonthOrNull() ?: return null
         val dayOfWeek = dayOfWeekOfDate(yearMonth.first, yearMonth.second, targetDay)
         if (dayOfWeek == java.util.Calendar.SUNDAY) {
-            Log.d("vgh_id_detect", "行事曆日期略過週日 keyword=$targetDay")
             return null
         }
         val firstDayColumn = firstDayColumnOfMonth(yearMonth.first, yearMonth.second)
@@ -605,17 +655,13 @@ class MyAccessibilityService : AccessibilityService() {
         if (rect.left < 0 || rect.right > screenWidth || rect.top <= monthTitle.rect.bottom || rect.bottom > screenHeight) {
             return null
         }
-        Log.d(
-            "vgh_id_detect",
-            "行事曆日期使用週一到週六推算 keyword=$targetDay row=$row column=$column rect=${rect.toShortString()}"
-        )
         return rect
     }
 
     private fun isDepartmentStep(keyword: String): Boolean =
         pendingDepartment?.isNotBlank() == true &&
-            keyword == pendingDepartment &&
-            currentStepIndex == script.indexOf(pendingDepartment)
+                keyword == pendingDepartment &&
+                currentStepIndex == script.indexOf(pendingDepartment)
 
     private fun findDepartmentInReservationSection(
         nodes: List<NodeData>,
@@ -639,7 +685,6 @@ class MyAccessibilityService : AccessibilityService() {
             .sortedBy { it.first.rect.centerY() }
 
         if (reservationHeaders.isEmpty()) {
-            Log.d("vgh_id_detect", "預約科別比對 department=$departmentName section=$targetSection headers=[] 使用一般科別比對")
             return departmentCandidates.bestDepartmentCandidate()
         }
 
@@ -648,15 +693,7 @@ class MyAccessibilityService : AccessibilityService() {
             targetSection = targetSection
         )
 
-        val best = candidatesInSection.bestDepartmentCandidate()
-        Log.d(
-            "vgh_id_detect",
-            "預約科別比對 department=$departmentName section=$targetSection " +
-                "headers=${reservationHeaders.map { "${it.second}:${it.first.rect.toShortString()}" }} " +
-                "candidates=${departmentCandidates.map { it.rect.toShortString() }} " +
-                "matched=${candidatesInSection.map { it.rect.toShortString() }} best=${best?.rect?.toShortString()}"
-        )
-        return best
+        return candidatesInSection.bestDepartmentCandidate()
     }
 
     private fun List<NodeData>.filterByReservationSection(
@@ -681,7 +718,7 @@ class MyAccessibilityService : AccessibilityService() {
             } else {
                 filter { candidate ->
                     candidate.rect.centerY() > targetHeader.rect.centerY() &&
-                        (nextHeader == null || candidate.rect.centerY() < nextHeader.rect.centerY())
+                            (nextHeader == null || candidate.rect.centerY() < nextHeader.rect.centerY())
                 }
             }
         }
@@ -701,31 +738,31 @@ class MyAccessibilityService : AccessibilityService() {
         return nodes.any { node ->
             val text = node.text.trim()
             text != currentDepartment &&
-                text.contains("科") &&
-                !text.endsWith("系") &&
-                text != "依門診科別"
+                    text.contains("科") &&
+                    !text.endsWith("系") &&
+                    text != "依門診科別"
         }
     }
 
     private fun isClinicStep(keyword: String): Boolean =
         pendingClinic?.isNotBlank() == true &&
-            keyword == pendingClinic &&
-            currentStepIndex == script.indexOf(pendingClinic)
+                keyword == pendingClinic &&
+                currentStepIndex == script.indexOf(pendingClinic)
 
     private fun isDoctorStep(keyword: String): Boolean =
         pendingDoctor?.isNotBlank() == true &&
-            keyword == pendingDoctor &&
-            currentStepIndex == script.indexOf(pendingDoctor)
+                keyword == pendingDoctor &&
+                currentStepIndex == script.indexOf(pendingDoctor)
 
     private fun String?.isPendingDoctorKeyword(): Boolean =
         pendingDoctor?.isNotBlank() == true && this == pendingDoctor
 
     private fun isPrivatePersonalDataStep(keyword: String): Boolean =
         keyword == "請輸入身分證號" ||
-            keyword == "請輸入病患姓名" ||
-            keyword == "民國${rocYear}年" ||
-            keyword == "${month}月" ||
-            keyword == "${day}日"
+                keyword == "請輸入病患姓名" ||
+                keyword == "民國${rocYear}年" ||
+                keyword == "${month}月" ||
+                keyword == "${day}日"
 
     private fun shouldEnterPersonalDataWaiting(nodes: List<NodeData>): Boolean {
         val personalStartIndex = script.indexOf("填寫個人資料")
@@ -737,6 +774,11 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun isPersonalDataFormVisible(nodes: List<NodeData>): Boolean {
         val hasIdField = nodes.any { it.text.trim() == "身分證號" || it.text.trim() == "請輸入身分證號" }
+
+        if (pendingAppointmentType == AppointmentType.RETURN_VISIT) {
+            return hasIdField
+        }
+
         val hasNameField = nodes.any { it.text.trim() == "姓名" || it.text.trim() == "請輸入病患姓名" }
         val hasBirthdayField = nodes.any { it.text.trim() == "出生年月日" }
         return hasIdField && hasNameField && hasBirthdayField
@@ -769,7 +811,6 @@ class MyAccessibilityService : AccessibilityService() {
             .sortedBy { it.first.rect.centerY() }
 
         if (sessionHeaders.isEmpty()) {
-            Log.d("vgh_id_detect", "醫師診別比對 doctor=$doctorName session=$targetSession headers=[] 使用一般醫師比對")
             return doctorCandidates.bestDoctorCandidate(doctorName)
         }
 
@@ -780,15 +821,7 @@ class MyAccessibilityService : AccessibilityService() {
             nearestHeader?.second == targetSession
         }
 
-        val best = candidatesInSession.bestDoctorCandidate(doctorName)
-        Log.d(
-            "vgh_id_detect",
-            "醫師診別比對 doctor=$doctorName session=$targetSession " +
-                "headers=${sessionHeaders.map { "${it.second}:${it.first.rect.toShortString()}" }} " +
-                "candidates=${doctorCandidates.map { "${it.text}:${it.rect.toShortString()}" }} " +
-                "matched=${candidatesInSession.map { it.rect.toShortString() }} best=${best?.rect?.toShortString()}"
-        )
-        return best
+        return candidatesInSession.bestDoctorCandidate(doctorName)
     }
 
     private fun findDoctorUnavailableStatus(nodes: List<NodeData>, doctorName: String): UnavailableSlotStatus? {
@@ -820,31 +853,18 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         var matchedStatus: UnavailableSlotStatus? = null
-        val unavailableDoctor = candidatesInSession.firstOrNull { doctor ->
+        candidatesInSession.firstOrNull { doctor ->
             val rowNodes = visibleNodes.filter { node ->
                 kotlin.math.abs(node.rect.centerY() - doctor.rect.centerY()) <= 95
             }
             val rowText = rowNodes.joinToString("") { it.text }.normalizedLabel()
             matchedStatus = doctor.text.toUnavailableSlotStatusOrNull()
                 ?: rowText.toUnavailableSlotStatusOrNull()
-                ?: unavailableStatusNodes.firstOrNull { (statusNode, _) ->
+                        ?: unavailableStatusNodes.firstOrNull { (statusNode, _) ->
                     kotlin.math.abs(statusNode.rect.centerY() - doctor.rect.centerY()) <= 95
                 }?.second
             matchedStatus != null
         }
-
-        val rowDebug = candidatesInSession.map { doctor ->
-            val rowNodes = visibleNodes
-                .filter { node -> kotlin.math.abs(node.rect.centerY() - doctor.rect.centerY()) <= 95 }
-                .sortedBy { it.rect.left }
-            "${doctor.text}:${rowNodes.map { "${it.text}:${it.rect.toShortString()}" }}"
-        }
-        Log.d(
-            "vgh_id_detect",
-            "目標醫師不可掛號檢查 doctor=$doctorName session=${targetSession.orEmpty()} status=${matchedStatus?.label.orEmpty()} " +
-                "matchedDoctor=${unavailableDoctor?.rect?.toShortString()} rows=$rowDebug " +
-                "statuses=${unavailableStatusNodes.map { (node, status) -> "${node.text}/${status.label}:${node.rect.toShortString()}" }}"
-        )
         return matchedStatus
     }
 
@@ -865,13 +885,11 @@ class MyAccessibilityService : AccessibilityService() {
         lastScrollHintAt = now
         lastHighlightAt = now
         overlay?.showMessage(message)
-        Log.d("vgh_id_detect", "提示使用者滑動: $message")
     }
 
     private fun showScrollHintWhenStepStable(message: String) {
         val elapsed = System.currentTimeMillis() - stepEnteredAt
         if (elapsed < SCROLL_HINT_GRACE_MS) {
-            Log.d("vgh_id_detect", "延後滑動提示 elapsed=${elapsed}ms message=$message")
             return
         }
         showScrollHint(message)
@@ -886,12 +904,6 @@ class MyAccessibilityService : AccessibilityService() {
     private fun traverse(node: AccessibilityNodeInfo?, list: MutableList<NodeData>) {
         if (node == null) return
 
-        val nodeText = node.text?.toString() ?: ""
-        val viewId = node.viewIdResourceName
-        if (nodeText.isNotEmpty()) {
-            Log.d("vgh_id_detect", "抓到文字了: $nodeText | ID是: $viewId")
-        }
-
         val rawText = node.text?.toString() ?: ""
         val rawDesc = node.contentDescription?.toString() ?: ""
         val rawHint = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -901,11 +913,20 @@ class MyAccessibilityService : AccessibilityService() {
         val isFilled = rawText.isNotEmpty() && !rawText.contains("請輸入") && rawText != rawHint && rawText != rawDesc
         val combinedText = if (isFilled) rawText else "$rawText $rawDesc $rawHint".trim()
 
-        if (combinedText.isNotEmpty()) {
+        // 收集節點條件放寬：有文字，或是可點擊，通通抓進來！
+        if (combinedText.isNotEmpty() || node.isClickable) {
             val rect = android.graphics.Rect()
             node.getBoundsInScreen(rect)
             if (rect.width() > 0 && rect.height() > 0) {
-                list.add(NodeData(combinedText, rect, node.isSelected))
+                list.add(
+                    NodeData(
+                        text = combinedText,
+                        rect = rect,
+                        isSelected = node.isSelected,
+                        contentDescription = rawDesc.takeIf { it.isNotBlank() },
+                        isClickable = node.isClickable // 紀錄點擊屬性
+                    )
+                )
             }
         }
         for (i in 0 until node.childCount) traverse(node.getChild(i), list)
@@ -922,35 +943,52 @@ class MyAccessibilityService : AccessibilityService() {
     private fun hideOverlayIfStable() {
         val elapsed = System.currentTimeMillis() - lastHighlightAt
         if (elapsed < 1500) {
-            Log.d("vgh_id_detect", "忽略暫態hide elapsed=${elapsed}ms")
             return
         }
         overlay?.hide()
     }
 
+    private fun isRegistrationSuccessScreen(nodes: List<NodeData>): Boolean {
+        return nodes.any { node ->
+            val text = node.text.replace(" ", "")
+            text.contains("臺北榮總預約掛號") ||
+                    text.contains("預約號碼") ||
+                    text.contains("加入行事曆")
+        }
+    }
 }
 
-data class NodeData(val text: String, val rect: Rect, val isSelected: Boolean = false)
+// 修改 NodeData，加上 isClickable 屬性
+data class NodeData(
+    val text: String,
+    val rect: Rect,
+    val isSelected: Boolean = false,
+    val contentDescription: String? = null,
+    val isClickable: Boolean = false // 新增這個屬性，用來標記是否為可點擊的按鈕
+)
 
 private enum class ReservationSection {
     INITIAL,
     RETURN_VISIT
 }
 
+private fun AppointmentType.toReservationSection(): ReservationSection =
+    when (this) {
+        AppointmentType.INITIAL -> ReservationSection.INITIAL
+        AppointmentType.RETURN_VISIT -> ReservationSection.RETURN_VISIT
+    }
+
+private fun AppointmentType.displayName(): String =
+    when (this) {
+        AppointmentType.INITIAL -> "初診預約"
+        AppointmentType.RETURN_VISIT -> "複診掛號"
+    }
+
 private enum class UnavailableSlotStatus(val label: String) {
     FULL("額滿"),
     LEAVE("請假"),
     CLOSED("關診"),
     STOPPED("停診")
-}
-
-private fun NodeData.isOnScreen(): Boolean {
-    val screenWidth = android.content.res.Resources.getSystem().displayMetrics.widthPixels
-    val screenHeight = android.content.res.Resources.getSystem().displayMetrics.heightPixels
-    return rect.right > 0 &&
-        rect.left < screenWidth &&
-        rect.bottom > 0 &&
-        rect.top < screenHeight
 }
 
 private fun String.toAppointmentDayText(): String {

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.medicalaiguidance.model.MockSchedule
+import com.example.medicalaiguidance.service.AppointmentType
 import com.example.medicalaiguidance.service.MyAccessibilityService
 import org.json.JSONArray
 import org.json.JSONObject
@@ -102,20 +103,27 @@ fun MockScheduleTestScreen(navController: NavHostController) {
             ?.contains(expectedService) == true
     }
 
-    fun startMockTest(schedule: MockSchedule) {
+    fun startMockTest(
+        schedule: MockSchedule,
+        appointmentType: AppointmentType
+    ) {
         val parentDepartment = findParentDepartment(schedule.clinicName, departmentMap)
         if (parentDepartment == null) {
             missingDepartmentClinic = schedule.clinicName
             return
         }
-        Log.d("vgh_id_detect", "Mock科別對應 clinic=${schedule.clinicName} parent=$parentDepartment")
+        Log.d(
+            "vgh_id_detect",
+            "Mock科別對應 clinic=${schedule.clinicName} parent=$parentDepartment type=$appointmentType"
+        )
 
         MyAccessibilityService.updateTarget(
             department = parentDepartment,
             clinic = schedule.clinicName,
             doctor = schedule.doctorName,
             date = schedule.date,
-            timeSlot = schedule.timeSlot
+            timeSlot = schedule.timeSlot,
+            appointmentType = appointmentType
         )
 
         val packageName = "tw.com.bicom.VGHTPE"
@@ -212,9 +220,9 @@ fun MockScheduleTestScreen(navController: NavHostController) {
                 }) { schedule ->
                     MockScheduleCard(
                         schedule = schedule,
-                        onStart = {
+                        onStart = { appointmentType ->
                             if (isServiceEnabled()) {
-                                startMockTest(schedule)
+                                startMockTest(schedule, appointmentType)
                             } else {
                                 showPermissionDialog = true
                             }
@@ -229,7 +237,7 @@ fun MockScheduleTestScreen(navController: NavHostController) {
 @Composable
 private fun MockScheduleCard(
     schedule: MockSchedule,
-    onStart: () -> Unit
+    onStart: (AppointmentType) -> Unit
 ) {
     val primaryDark = Color(0xFF385E5E)
     Card(
@@ -269,13 +277,23 @@ private fun MockScheduleCard(
                 )
             }
 
-            Button(
-                onClick = onStart,
-                colors = ButtonDefaults.buttonColors(containerColor = primaryDark)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("測試")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onStart(AppointmentType.INITIAL) },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryDark)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("初診")
+                }
+                Button(
+                    onClick = { onStart(AppointmentType.RETURN_VISIT) },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryDark)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("複診")
+                }
             }
         }
     }

@@ -57,6 +57,24 @@ class HistoryViewModel(
         filterHistoryData()
     }
 
+    // 新增：取消掛號邏輯
+    fun cancelRegistration(id: String) {
+        viewModelScope.launch {
+            // 更新本地資料狀態（將該紀錄轉為未完成，並清空醫師）
+            _allHistoryList.value = _allHistoryList.value.map { history ->
+                if (history.id == id) {
+                    history.copy(
+                        status = HistoryStatus.UNCOMPLETED,
+                        doctorName = null
+                    )
+                } else {
+                    history
+                }
+            }
+            filterHistoryData()
+        }
+    }
+
     private fun filterHistoryData() {
         val filtered = when (_selectedTab.value) {
             1 -> _allHistoryList.value.filter { it.status == HistoryStatus.COMPLETED }
