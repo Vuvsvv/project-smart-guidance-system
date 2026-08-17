@@ -16,7 +16,7 @@ def recommend_followup(request: FollowupRequest) -> RecommendationResult:
         parent = next((d["parentDept"] for d in all_depts if d["childDept"] == child), "")
     department_result = DepartmentResult(parentDept=parent, childDept=child)
 
-    all_rows = get_available_schedules(child, TODAY)
+    all_rows = get_available_schedules(child, TODAY, visit_type="複診")
     all_rows = [r for r in all_rows if _session_open(r)]
 
     doctor_pref = (request.preferences.doctor_preference or "不限").strip()

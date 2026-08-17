@@ -1,6 +1,9 @@
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
+
+VisitType = Literal["初診", "複診"]
+
 
 class PatientInput(BaseModel):
     age: Optional[int] = None        
@@ -54,6 +57,7 @@ class DepartmentResult(BaseModel):
 
 class TriageCase(BaseModel):
     case_id: str
+    visit_type: VisitType = "初診"
     history_records: list[HistoryRecord] = Field(default_factory=list)
     patient_input: PatientInput = Field(default_factory=PatientInput)
     availability: Availability = Field(default_factory=Availability)
@@ -65,6 +69,7 @@ class TriageCase(BaseModel):
 class ChatRequest(BaseModel):
     message: str = ""
     triage_case: Optional[TriageCase] = None
+    visit_type: VisitType = "初診"
 
 
 class TriageResult(BaseModel):
@@ -119,6 +124,17 @@ class FallbackDepartment(BaseModel):
 
 class RecommendationResult(BaseModel):
     case_id: str
-    department: Optional[DepartmentResult] = None 
+    department: Optional[DepartmentResult] = None
     recommendations: list[RecommendationItem] = Field(default_factory=list)
     fallback_departments: list[FallbackDepartment] = Field(default_factory=list)
+
+
+
+class ChatResponse(BaseModel):
+    case_id: str
+    reply: str = ""
+    needMoreInfo: bool = True
+    triage_case: TriageCase
+    recommendation: Optional[RecommendationResult] = None
+    debug: Optional[dict] = None
+

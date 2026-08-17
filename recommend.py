@@ -1,12 +1,14 @@
 import uuid
 
+from config import trace_note
 from database import get_available_schedules
 from models import (
     RecommendRequest, RecommendationResult, DepartmentResult,
     RecommendationItem, FallbackDepartment,
 )
 from dept import recommend_department
-from schedule import TODAY, _session_open, _slot_match, _session_range, select_feasible
+from schedule import (TODAY, SESSION_ORDER, _session_open, _slot_match,
+                      _session_range, select_feasible)
 from scoring import score_specialties_with_ai, _row_tag, _has_specialty
 
 
@@ -45,18 +47,21 @@ def _build_items(rows, department_result, tag_scores, matched_specialties, slots
             reasons=reasons,
         ))
 
+    def _when(x):
+        return (x.date, SESSION_ORDER.get(x.session, 9))
+
     if sort_by_date:
-        items.sort(key=lambda x: x.date)
+        items.sort(key=_when)
     elif specialty_priority:
-        items.sort(key=lambda x: (-x.score, x.date))
+        items.sort(key=lambda x: (-x.score, *_when(x)))
     else:
-        items.sort(key=lambda x: (x.date, -x.score))
+        items.sort(key=lambda x: (*_when(x), -x.score))
 
     return items[:5]
 
 
-def _open_rows(child_dept: str) -> list:
-    rows = get_available_schedules(child_dept, TODAY)
+def _open_rows(child_dept: str, visit_type: str = "初診") -> list:
+    rows = get_available_schedules(child_dept, TODAY, visit_type=visit_type)
     return [r for r in rows if _session_open(r)]
 
 
@@ -70,13 +75,15 @@ def recommend(request: RecommendRequest) -> RecommendationResult:
     doctor_pref = (preferences.doctor_preference or "不限").strip()
     has_doctor = bool(doctor_pref and doctor_pref != "不限")
 
-    department_result, ai_fallbacks = recommend_department(patient_input)
+    visit_type = triage_case.visit_type
+
+    department_result, ai_fallbacks = recommend_department(patient_input, visit_type)
 
     used_dept = department_result
-    all_rows = _open_rows(department_result.childDept)
+    all_rows = _open_rows(department_result.childDept, visit_type)
     if not all_rows:
         for alt in ai_fallbacks:
-            alt_rows = _open_rows(alt.childDept)
+            alt_rows = _open_rows(alt.childDept, visit_type)
             if alt_rows:
                 all_rows = alt_rows
                 used_dept = DepartmentResult(
@@ -101,6 +108,21 @@ def recommend(request: RecommendRequest) -> RecommendationResult:
 
     feasible, relaxed_by_date = select_feasible(all_rows, slots, doctor_pref)
 
+    # 除錯
+    trace_note("班表篩選", {
+        "掛號類別": visit_type,
+        "查號的科別": used_dept.childDept,
+        "是否換過次順位科": used_dept.childDept != department_result.childDept,
+        "該科可掛號筆數": len(all_rows),
+        "通過時段/醫師硬篩後": len(feasible),
+        "病患方便時段": [f"{s.day}{s.session}" for s in slots] or ["未指定"],
+        "指定醫師": doctor_pref,
+        "時段無號而放寬": relaxed_by_date,
+        "排序方式": ("純日期（已放寬）" if relaxed_by_date
+                 else "專長→日期" if preferences.specialty_priority else "日期→專長"),
+    })
+    #
+
     if has_doctor:
         tag_scores, matched_specialties = {}, {}
     else:
@@ -124,7 +146,6 @@ def recommend(request: RecommendRequest) -> RecommendationResult:
 
 def main():
     from models import TriageCase, PatientInput, Availability, Slot, Preferences, Triage
-    # 單獨測試
     demo_request = RecommendRequest(
         triage_case=TriageCase(
             case_id="A1B2C3D4",

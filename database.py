@@ -1,17 +1,25 @@
 import os
 import pyodbc
-from dotenv import load_dotenv  
-load_dotenv()                   
+from dotenv import load_dotenv
+load_dotenv()
+
+DB_DRIVER   = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
+DB_SERVER   = os.getenv("DB_SERVER", "100.64.116.35,1433")
+DB_NAME     = os.getenv("DB_NAME", "MediChainDB")
+DB_USER     = os.getenv("DB_USER", "sa")
+DB_TRUST_CERT = os.getenv("DB_TRUST_CERT", "yes")
+
 
 def get_db_connection():
     db_password = os.getenv("DB_PASSWORD")
     return pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=medichain-server.database.windows.net;"
-        "DATABASE=MediChainDB;"
-        "UID=medichain_admin;"
+        f"DRIVER={{{DB_DRIVER}}};"
+        f"SERVER={DB_SERVER};"
+        f"DATABASE={DB_NAME};"
+        f"UID={DB_USER};"
         f"PWD={db_password};"
         "Encrypt=yes;"
+        f"TrustServerCertificate={DB_TRUST_CERT};"
         "Connection Timeout=30;"
     )
  
@@ -47,7 +55,8 @@ def get_departments_with_category() -> list[dict]:
         return []
 
 
-def get_available_schedules(dept_name: str, from_date: str) -> list[dict]:
+def get_available_schedules(dept_name: str, from_date: str,
+                            visit_type: str | None = None) -> list[dict]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -61,9 +70,15 @@ def get_available_schedules(dept_name: str, from_date: str) -> list[dict]:
               AND s.date >= ?
               AND s.status IS NULL
               AND doc.is_placeholder = 0
-            ORDER BY s.date, s.session
         """
-        cursor.execute(sql, dept_name, from_date)
+        params = [dept_name, from_date]
+
+        if visit_type:
+            sql += "              AND s.visit_type = ?\n"
+            params.append(visit_type)
+
+        sql += "            ORDER BY s.date, s.session"
+        cursor.execute(sql, *params)
         rows = cursor.fetchall()
         conn.close()
         return [{

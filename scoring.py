@@ -1,5 +1,5 @@
 import json
-from config import ask_llm
+from config import ask_llm, trace_note  
 from models import PatientInput
 
 TAG_NEUTRAL = 0.5
@@ -57,9 +57,24 @@ key 一律用清單的「編號」（字串），不要把專長描述抄回來�
             if key in result and isinstance(result[key], dict):
                 scores[t] = float(result[key].get("score", TAG_NEUTRAL))
                 matched[t] = str(result[key].get("matched", "") or "")
+        # 除錯
+        trace_note("專長評分", {
+            "送去評分的專長段數": len(distinct_specialties),
+            "成功解析段數": len(scores),
+            "門檻 0.7 以上段數": sum(1 for s in scores.values() if s >= 0.7),
+            "逐段結果": [
+                {"專長": t, "score": scores[t], "matched": matched.get(t, "")}
+                for t in sorted(scores, key=lambda k: -scores[k])
+            ],
+        })
+        #
         return scores, matched
     except (json.JSONDecodeError, TypeError, ValueError):
         print("  專長評分解析失敗，全部視為中性")
+        # 除錯
+        trace_note("專長評分", {"解析失敗": True, "全部視為中性 0.5": True,
+                              "送去評分的專長段數": len(distinct_specialties)})
+        #
         return {}, {}
 
 

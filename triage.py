@@ -2,11 +2,10 @@ import json
 import re
 import uuid
 from config import ask_llm
-from recommend import recommend
 from schedule import SESSIONS_DESC
 from models import (
     ChatRequest, TriageResult, TriageCase, HistoryRecord,
-    PatientInput, Triage, ConversationState, RecommendRequest,
+    PatientInput, Triage, ConversationState,
     Availability, Preferences,
 )
 
@@ -280,108 +279,50 @@ def parse_availability_answer(chat_request: ChatRequest) -> TriageCase:
 
 
 def main():
-    print(BASIC_INFO_QUESTIONS)
-    basic_answer = input("\n請回答：").strip()
-    triage_case = parse_basic_info(ChatRequest(message=basic_answer, triage_case=None))
-    print(f"  建立新病歷：{triage_case.case_id}"
-          f"（年齡 {triage_case.patient_input.age}、性別 {triage_case.patient_input.gender}）")
+    from web.flow import step
 
-    print()
-    print(SYMPTOM_QUESTIONS)
+    print(BASIC_INFO_QUESTIONS)
     print("\n（輸入 q 結束）\n")
 
+    triage_case = None
     while True:
-        user_input = input("請輸入您的問題：").strip()
+        user_input = input("請回答：").strip()
         if user_input.lower() == "q":
             break
         if not user_input:
             continue
 
-        chat_request = ChatRequest(message=user_input, triage_case=triage_case)
-        current_stage = triage_case.conversation_state.stage if triage_case else "collecting"
+        response = step(ChatRequest(message=user_input, triage_case=triage_case))
+        triage_case = response.triage_case
 
-        if current_stage == "collecting_availability":
-            triage_case = parse_availability_answer(chat_request)
-            triage_case.conversation_state.stage = "complete"
-            triage_case.conversation_state.is_complete = True
+        print(triage_case.model_dump_json(indent=2))
+        print("─" * 50)
+        print(response.reply)
+        print("─" * 50)
 
+        if response.recommendation is not None:
             urgency = triage_case.triage.urgency_level or "low"
-            urgency_label = {"high": " 高（請立即急診）", "medium": " 中（盡快就醫）", "low": " 低（一般門診）"}.get(urgency, urgency)
-
-            
-            final_result = TriageResult(
-                case_id=triage_case.case_id,
-                triage_case=triage_case,
-                conversation_state=triage_case.conversation_state,
-                triage=triage_case.triage,
-                department_result=None,
-                next_question=None,
-                reply="感謝您的回答，資料已收集完成！",
-                needMoreInfo=False
-            )
-            print(final_result.model_dump_json(indent=2))
-            print("─" * 50)
-            print(f"  急迫程度：{urgency_label}")
+            urgency_label = {"high": " 高（請立即急診）", "medium": " 中（盡快就醫）",
+                             "low": " 低（一般門診）"}.get(urgency, urgency)
             slots = triage_case.availability.available_slots
             slots_str = "、".join(f"{s.day}{s.session}" for s in slots) if slots else "（未指定，不限時段）"
+            print(f"  急迫程度：{urgency_label}")
             print(f"  方便時段：{slots_str}")
             print(f"  看診考量：{'醫師專長優先' if triage_case.preferences.specialty_priority else '時間優先'}")
             print(f"  指定醫師：{triage_case.preferences.doctor_preference}")
+            if urgency == "medium":
+                print("  緊急程度：中（TTAS 第三級）→ 建議盡快於當日或隔天就診")
             print("=" * 50)
-            print(" 偏好收集完成")
-            print("=" * 50)
-
-            
-            preference = "醫師專長優先" if triage_case.preferences.specialty_priority else "時間優先"
-            recommend_result = recommend(RecommendRequest(
-                triage_case=triage_case,   
-                preference=preference
-            ))
-            print("\n" + "=" * 50)
             print("分診與科別推薦結果（RecommendationResult）")
             print("=" * 50)
-            
-            if triage_case.triage.urgency_level == "medium":
-                print("  緊急程度：中（TTAS 第三級）→ 建議盡快於當日或隔天就診")
-            print(recommend_result.model_dump_json(indent=2))
+            print(response.recommendation.model_dump_json(indent=2))
             print("=" * 50)
-            print()
+
+        if not response.needMoreInfo:
             triage_case = None
-
-        else:
-            result = collect_symptoms(chat_request)
-            triage_case = result.triage_case
-
-            if triage_case.triage.urgency_level == "high":
-                print(result.model_dump_json(indent=2))
-                triage_case = None
-                continue
-
-            if result.needMoreInfo:
-                print(result.model_dump_json(indent=2))
-                print(f"   AI 問題：{result.reply}")
-               
-
-            else:
-                
-                triage_case.conversation_state.stage = "collecting_availability"
-                combined_reply = f"{result.reply}\n\n{AVAILABILITY_QUESTIONS}"
-                avail_result = TriageResult(
-                    case_id=triage_case.case_id,
-                    triage_case=triage_case,
-                    conversation_state=triage_case.conversation_state,
-                    triage=triage_case.triage,
-                    department_result=None,
-                    next_question=None,
-                    reply=combined_reply,
-                    needMoreInfo=True  
-                )
-                print(avail_result.model_dump_json(indent=2))
-                print("─" * 50)
-                print(f"AI回覆：{avail_result.reply}")   
-                print("─" * 50)
-                print(" 症狀收集完成，請再回答就診偏好問題")
-                print("─" * 50)
+            print()
+            print(BASIC_INFO_QUESTIONS)
+            print()
 
 
 if __name__ == "__main__":

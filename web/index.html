@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>導底看哪科 — 智慧看診指南</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    background: #eef2f6;
+    color: #1f2933;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: #0f6e8c;
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 19px; font-weight: 600; letter-spacing: .5px; }
+  header .sub { font-size: 12px; opacity: .8; margin-top: 2px; }
+  header .right { display: flex; align-items: center; gap: 12px; }
+  .hbtn {
+    background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.4);
+    color: #fff; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  .hbtn:hover { background: rgba(255,255,255,.28); }
+
+  .body { flex: 1; display: flex; overflow: hidden; }
+  main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  #chat {
+    flex: 1; overflow-y: auto; padding: 24px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .wrap { max-width: 860px; width: 100%; margin: 0 auto; }
+
+  .bubble {
+    padding: 13px 17px; border-radius: 12px; line-height: 1.75;
+    white-space: pre-wrap; word-break: break-word; font-size: 15px;
+    max-width: 88%;
+  }
+  .bot  { background: #fff; border: 1px solid #d7e0e8; align-self: flex-start;
+          box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .user { background: #0f6e8c; color: #fff; align-self: flex-end; }
+  .err  { background: #fdecea; border: 1px solid #f5c2bd; color: #8c2f22; align-self: flex-start; }
+  .thinking { color: #6b7a86; font-style: italic; }
+
+  .mode-box {
+    background: #fff; border: 1px solid #d7e0e8; border-radius: 12px;
+    padding: 30px; align-self: center; text-align: center; margin-top: 6vh;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06); max-width: 560px;
+  }
+  .mode-box p  { color: #6b7a86; font-size: 15px; margin-bottom: 24px; }
+  .mode-btns { display: flex; gap: 18px; justify-content: center; }
+  .mode-btn {
+    flex: 1; border: 2px solid #0f6e8c; background: #fff; color: #0f6e8c;
+    border-radius: 10px; padding: 26px 20px; cursor: pointer; font-family: inherit;
+    text-align: center; transition: background .12s;
+  }
+  .mode-btn:hover { background: #e6f2f6; }
+  .mode-btn .t { font-size: 24px; font-weight: 700; display: block; letter-spacing: 3px; }
+
+  .dept-box {
+    background: #fff; border: 1px solid #d7e0e8; border-left: 4px solid #0f6e8c;
+    border-radius: 10px; padding: 16px 18px; align-self: stretch;
+  }
+  .dept-box .title { font-size: 12px; color: #6b7a86; letter-spacing: 1px; margin-bottom: 6px; }
+  .dept-box .name  { font-size: 21px; font-weight: 700; color: #0f6e8c; }
+  .dept-box .name small { font-size: 14px; font-weight: 400; color: #6b7a86; margin-left: 8px; }
+  .dept-box ul { margin: 10px 0 0 18px; font-size: 14px; line-height: 1.8; color: #3e4c59; }
+  .conf {
+    display: inline-block; background: #e6f2f6; color: #0f6e8c; border-radius: 20px;
+    padding: 3px 12px; font-size: 13px; font-weight: 600; margin-left: 10px;
+  }
+
+  .cards { display: flex; flex-direction: column; gap: 12px; align-self: stretch; }
+  .card {
+    background: #fff; border: 1px solid #d7e0e8; border-radius: 10px;
+    padding: 15px 18px; display: flex; gap: 16px; align-items: flex-start;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  .rank {
+    width: 30px; height: 30px; border-radius: 50%; background: #0f6e8c; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; flex-shrink: 0;
+  }
+  .card .info { flex: 1; }
+  .card .doctor { font-size: 17px; font-weight: 700; }
+  .card .doctor .dept { font-size: 13px; font-weight: 400; color: #6b7a86; margin-left: 8px; }
+  .card .when { color: #3e4c59; font-size: 14px; margin-top: 5px; }
+  .card .reasons { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    background: #f0f4f7; border: 1px solid #dde5eb; color: #3e4c59;
+    border-radius: 5px; padding: 3px 9px; font-size: 12.5px;
+  }
+  .tag.match { background: #e8f5ec; border-color: #c3e6cd; color: #1e6b3a; }
+  .score { text-align: center; flex-shrink: 0; }
+  .score .num { font-size: 19px; font-weight: 700; color: #0f6e8c; }
+  .score .lbl { font-size: 11px; color: #8b98a5; }
+
+  .composer {
+    background: #fff; border-top: 1px solid #d7e0e8; padding: 14px 24px; flex-shrink: 0;
+  }
+  .composer .row { display: flex; gap: 10px; }
+  #msg {
+    flex: 1; resize: none; font-family: inherit; font-size: 15px; line-height: 1.6;
+    padding: 11px 14px; border: 1px solid #cbd5dd; border-radius: 8px; height: 62px;
+  }
+  #msg:focus { outline: none; border-color: #0f6e8c; }
+  .btn {
+    background: #0f6e8c; color: #fff; border: none; border-radius: 8px;
+    padding: 0 28px; font-size: 15px; font-family: inherit; cursor: pointer; font-weight: 600;
+  }
+  .btn:hover:not(:disabled) { background: #0c5a73; }
+  .btn:disabled { background: #a8b6c1; cursor: not-allowed; }
+  .hint { font-size: 12px; color: #8b98a5; margin-top: 6px; }
+
+  #deptPicker select {
+    flex: 1; font-family: inherit; font-size: 15px; padding: 11px 12px;
+    border: 1px solid #cbd5dd; border-radius: 8px; background: #fff; height: 44px;
+  }
+  #deptPicker select:disabled { background: #f0f4f7; color: #8b98a5; }
+  #deptPicker .lbl { font-size: 12px; color: #6b7a86; margin-bottom: 4px; display: block; }
+  #deptPicker .col { flex: 1; }
+
+  #debug {
+    width: 460px; background: #1e2732; color: #cfd8e3; overflow-y: auto;
+    padding: 18px; font-size: 12.5px; flex-shrink: 0; display: none;
+    font-family: Consolas, "Courier New", monospace;
+  }
+  #debug.open { display: block; }
+  #debug h2 { font-size: 13px; color: #7fd1e8; margin: 18px 0 8px; letter-spacing: 1px; }
+  #debug h2:first-child { margin-top: 0; }
+  #debug pre {
+    background: #131a23; border: 1px solid #2c3846; border-radius: 6px;
+    padding: 10px; white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+  }
+  #debug .kv { display: flex; justify-content: space-between; padding: 3px 0;
+               border-bottom: 1px solid #2c3846; }
+  #debug .kv span:last-child { color: #a8e6b8; }
+  #debug .empty { color: #6b7a86; font-style: italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>導底看哪科 — 智慧看診指南</h1>
+    <div class="sub" id="modeLabel">請選擇看診類型</div>
+  </div>
+  <div class="right">
+    <button class="hbtn" id="restartBtn" style="display:none">重新開始</button>
+    <button class="hbtn" id="debugToggle" style="display:none">除錯</button>
+  </div>
+</header>
+
+<div class="body">
+  <main>
+    <div id="chat"></div>
+
+    <div class="composer" id="deptPicker" style="display:none">
+      <div class="wrap row">
+        <div class="col">
+          <span class="lbl">科別分類</span>
+          <select id="parentSel"><option value="">載入中…</option></select>
+        </div>
+        <div class="col">
+          <span class="lbl">要回診的科別</span>
+          <select id="childSel" disabled><option value="">請先選左邊</option></select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn" id="deptOk" disabled style="height:44px">確定</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer" id="composer" style="display:none">
+      <div class="wrap row">
+        <textarea id="msg" placeholder="請照編號回答上面的問題…"></textarea>
+        <button class="btn" id="send">送出</button>
+      </div>
+      <div class="wrap hint">Enter 送出，Shift + Enter 換行</div>
+    </div>
+  </main>
+  <aside id="debug"></aside>
+</div>
+
+<script>
+const chat        = document.getElementById("chat");
+const msg         = document.getElementById("msg");
+const sendBtn     = document.getElementById("send");
+const debugPanel  = document.getElementById("debug");
+const composer    = document.getElementById("composer");
+const deptPicker  = document.getElementById("deptPicker");
+const parentSel   = document.getElementById("parentSel");
+const childSel    = document.getElementById("childSel");
+const deptOk      = document.getElementById("deptOk");
+const modeLabel   = document.getElementById("modeLabel");
+const restartBtn  = document.getElementById("restartBtn");
+
+let mode        = null;
+let visitType   = "初診";
+let triageCase  = null;
+let followupDept = null;
+let lastDebug   = null;
+
+const WEEKDAY = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
+function weekdayOf(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return isNaN(d) ? "" : WEEKDAY[(d.getDay() + 6) % 7];
+}
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function add(node) { chat.appendChild(node); chat.scrollTop = chat.scrollHeight; return node; }
+function bubble(cls, text) { return add(el("div", "bubble " + cls, text)); }
+
+function showModePicker() {
+  chat.innerHTML = "";
+  composer.style.display = "none";
+  deptPicker.style.display = "none";
+  restartBtn.style.display = "none";
+  debugToggle.style.display = "none";
+  debugPanel.classList.remove("open");
+  modeLabel.textContent = "請選擇看診類型";
+  mode = null; visitType = "初診"; triageCase = null; followupDept = null; lastDebug = null;
+
+  const box = el("div", "mode-box");
+  box.appendChild(el("p", null, "選擇後系統會用不同方式為您安排門診"));
+
+  const btns = el("div", "mode-btns");
+  [
+    ["初診", () => startChat("初診")],
+    ["複診", () => startChat("複診")],
+    ["回診", startFollowup],
+  ].forEach(([title, fn]) => {
+    const b = el("button", "mode-btn");
+    b.appendChild(el("span", "t", title));
+    b.onclick = fn;
+    btns.appendChild(b);
+  });
+  box.appendChild(btns);
+  add(box);
+}
+
+async function startChat(vt) {
+  mode = "chat";
+  visitType = vt;
+  chat.innerHTML = "";
+  modeLabel.textContent = vt;
+  restartBtn.style.display = "";
+  composer.style.display = "";
+  msg.disabled = false; sendBtn.disabled = false;
+  msg.placeholder = "請照編號回答上面的問題…";
+
+  try {
+    const d = await (await fetch("/api/start")).json();
+    bubble("bot", d.reply);
+    msg.focus();
+  } catch (e) {
+    bubble("err", "無法連線到伺服器，請確認 uvicorn 還在執行。");
+  }
+}
+
+async function startFollowup() {
+  mode = "followup";
+  chat.innerHTML = "";
+  modeLabel.textContent = "回診";
+  restartBtn.style.display = "";
+  deptPicker.style.display = "";
+  composer.style.display = "none";
+
+  bubble("bot", "請問您這次要回診哪一科？請從下方選單選擇。");
+
+  try {
+    const data = await (await fetch("/api/departments")).json();
+    const grouped = data.grouped || {};
+    const parents = Object.keys(grouped).sort();
+
+    if (!parents.length) {
+      bubble("err", "科別清單是空的——資料庫目前連不上，請先確認 .env 的 DB_PASSWORD。");
+      parentSel.innerHTML = '<option value="">（無資料）</option>';
+      return;
+    }
+
+    parentSel.innerHTML = '<option value="">請選擇…</option>';
+    parents.forEach(p => {
+      const o = el("option", null, `${p}（${grouped[p].length} 科）`);
+      o.value = p;
+      parentSel.appendChild(o);
+    });
+
+    parentSel.onchange = () => {
+      const kids = grouped[parentSel.value] || [];
+      childSel.innerHTML = '<option value="">請選擇…</option>';
+      kids.slice().sort().forEach(c => {
+        const o = el("option", null, c);
+        o.value = c;
+        childSel.appendChild(o);
+      });
+      childSel.disabled = !kids.length;
+      deptOk.disabled = true;
+    };
+    childSel.onchange = () => { deptOk.disabled = !childSel.value; };
+  } catch (e) {
+    bubble("err", "無法取得科別清單，請確認伺服器與資料庫。");
+  }
+}
+
+deptOk.onclick = async () => {
+  followupDept = childSel.value;
+  if (!followupDept) return;
+
+  bubble("user", followupDept);
+  deptPicker.style.display = "none";
+  composer.style.display = "";
+  msg.disabled = false; sendBtn.disabled = false;
+
+  const d = await (await fetch("/api/followup/questions")).json();
+  bubble("bot", d.reply);
+  msg.focus();
+};
+
+function renderDept(dept) {
+  const box = el("div", "dept-box");
+  box.appendChild(el("div", "title", mode === "followup" ? "回診科別" : "建議科別"));
+
+  const name = el("div", "name");
+  name.textContent = dept.childDept;
+  name.appendChild(el("small", null, dept.parentDept));
+  if (dept.confidence > 0) name.appendChild(el("span", "conf", "信心 " + dept.confidence));
+  box.appendChild(name);
+
+  if (dept.reason && dept.reason.length) {
+    const ul = el("ul");
+    dept.reason.forEach(r => ul.appendChild(el("li", null, r)));
+    box.appendChild(ul);
+  }
+  add(box);
+}
+
+function renderCards(items) {
+  const showScore = mode !== "followup";
+  const box = el("div", "cards");
+
+  items.forEach((it, i) => {
+    const card = el("div", "card");
+    card.appendChild(el("div", "rank", String(i + 1)));
+
+    const info = el("div", "info");
+    const doc = el("div", "doctor");
+    doc.textContent = it.doctor;
+    doc.appendChild(el("span", "dept", it.childDept));
+    info.appendChild(doc);
+
+    info.appendChild(el("div", "when",
+      `${it.date}（${weekdayOf(it.date)}） ${it.session} ${it.session_time}　診間 ${it.room}`));
+
+    const reasons = el("div", "reasons");
+    (it.reasons || []).forEach(r =>
+      reasons.appendChild(el("span", r.includes("專長相符") ? "tag match" : "tag", r)));
+    info.appendChild(reasons);
+    card.appendChild(info);
+
+    if (showScore) {
+      const sc = el("div", "score");
+      sc.appendChild(el("div", "num", it.score.toFixed(2)));
+      sc.appendChild(el("div", "lbl", "專長分"));
+      card.appendChild(sc);
+    }
+    box.appendChild(card);
+  });
+  add(box);
+}
+
+function renderRecommendation(rec) {
+  if (rec.department) renderDept(rec.department);
+  if (rec.recommendations && rec.recommendations.length) {
+    renderCards(rec.recommendations);
+    if (rec.recommendations.length < 5) {
+      bubble("bot", "以上是符合條件的全部門診。若想要更多選擇，可以放寬方便時段再試一次。");
+    }
+  } else {
+    const tried = (rec.fallback_departments || []).map(f => f.childDept).join("、");
+    bubble("bot", `很抱歉，近期查無可掛號的門診${tried ? `（已嘗試：${tried}）` : ""}。`);
+  }
+}
+
+function renderDebug() {
+  debugPanel.innerHTML = "";
+  if (!lastDebug) { debugPanel.appendChild(el("div", "empty", "尚未有資料")); return; }
+
+  debugPanel.appendChild(el("h2", null, "AI 呼叫（這一輪）"));
+  const kv = el("div");
+  (lastDebug.ai_calls || []).forEach(c => {
+    const row = el("div", "kv");
+    row.appendChild(el("span", null, c.label));
+    row.appendChild(el("span", null, c.elapsed + " 秒"));
+    kv.appendChild(row);
+  });
+  const total = el("div", "kv");
+  total.appendChild(el("span", null, `合計 ${lastDebug.ai_call_count} 次`));
+  total.appendChild(el("span", null, lastDebug.total_ai_seconds + " 秒"));
+  kv.appendChild(total);
+  debugPanel.appendChild(kv);
+
+  const notes = lastDebug.notes || {};
+  Object.keys(notes).forEach(k => {
+    debugPanel.appendChild(el("h2", null, k));
+    debugPanel.appendChild(el("pre", null, JSON.stringify(notes[k], null, 2)));
+  });
+
+  if (triageCase) {
+    debugPanel.appendChild(el("h2", null, "TRIAGE_CASE（完整病歷）"));
+    debugPanel.appendChild(el("pre", null, JSON.stringify(triageCase, null, 2)));
+  }
+}
+
+document.getElementById("debugToggle").onclick = () => {
+  debugPanel.classList.toggle("open");
+  if (debugPanel.classList.contains("open")) renderDebug();
+};
+restartBtn.onclick = showModePicker;
+
+function finish() {
+  msg.placeholder = "本次流程已完成，可按右上角「重新開始」再跑一次。";
+  msg.disabled = true;
+  sendBtn.disabled = true;
+}
+
+async function send() {
+  const text = msg.value.trim();
+  if (!text) return;
+
+  bubble("user", text);
+  msg.value = "";
+  sendBtn.disabled = true;
+  const waiting = bubble("bot thinking", "分析中…");
+
+  const url  = mode === "followup" ? "/api/followup" : "/api/chat";
+  const body = mode === "followup"
+    ? { dept: followupDept, preference_answer: text }
+    : { message: text, triage_case: triageCase, visit_type: visitType };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    waiting.remove();
+
+    if (!res.ok) {
+      bubble("err", data.error || "發生錯誤，請再試一次。");
+      console.error(data.detail);
+      sendBtn.disabled = false;
+      return;
+    }
+
+    lastDebug = data.debug;
+    if (lastDebug) debugToggle.style.display = "";
+
+    if (mode === "followup") {
+      renderRecommendation(data.recommendation);
+      finish();
+    } else {
+      triageCase = data.triage_case;
+      sessionStorage.setItem("triage_case", JSON.stringify(triageCase));
+      if (data.reply) bubble("bot", data.reply);
+      if (data.recommendation) renderRecommendation(data.recommendation);
+      if (data.needMoreInfo) { sendBtn.disabled = false; msg.focus(); } else { finish(); }
+    }
+
+    if (debugPanel.classList.contains("open")) renderDebug();
+  } catch (e) {
+    waiting.remove();
+    bubble("err", "無法連線到伺服器，請確認 uvicorn 還在執行。");
+    console.error(e);
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.onclick = send;
+msg.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+showModePicker();
+</script>
+</body>
+</html>

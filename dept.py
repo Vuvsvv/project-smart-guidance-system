@@ -1,27 +1,34 @@
 import json
-from config import ask_llm
+from config import ask_llm, trace_note   
 from database import get_departments_with_category
 from dept_keywords import count_symptom_coverage
-from models import PatientInput, DepartmentResult, FallbackDepartment
+from models import PatientInput, DepartmentResult, FallbackDepartment, VisitType
 
-FOLLOWUP_ONLY_PARENTS = {"大我門診", "AI輔助門診", "整合門診"}
+FIRST_VISIT_EXCLUDED_PARENTS = {"大我門診"}
 
 
-def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult, list[FallbackDepartment]]:
+def recommend_department(patient_input: PatientInput,
+                         visit_type: VisitType = "初診",
+                         ) -> tuple[DepartmentResult, list[FallbackDepartment]]:
 
     coverage_count, total_symptoms = count_symptom_coverage(patient_input)
 
     all_depts = get_departments_with_category()
-    first_visit_depts = [d for d in all_depts if d["parentDept"] not in FOLLOWUP_ONLY_PARENTS]
+  
+    if visit_type == "初診":
+        candidate_depts = [d for d in all_depts
+                           if d["parentDept"] not in FIRST_VISIT_EXCLUDED_PARENTS]
+    else:
+        candidate_depts = list(all_depts)
 
     age = patient_input.age
     if age is not None and age >= 18:
-        first_visit_depts = [d for d in first_visit_depts
-                             if not (d["parentDept"] == "婦幼" and d["childDept"] != "婦產科")]
+        candidate_depts = [d for d in candidate_depts
+                           if not (d["parentDept"] == "婦幼" and d["childDept"] != "婦產科")]
 
    
     candidate_lines = "\n".join(
-        f"- 子科別「{d['childDept']}」（父科別「{d['parentDept']}」）" for d in first_visit_depts
+        f"- 子科別「{d['childDept']}」（父科別「{d['parentDept']}」）" for d in candidate_depts
     )
 
     if coverage_count:
@@ -88,7 +95,7 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
         ai_result = json.loads(response)
     except json.JSONDecodeError:
         print("  分診 JSON 解析失敗，退回第一個科別")
-        fallback = first_visit_depts[0]
+        fallback = candidate_depts[0]
         ai_result = {
             "parentDept": fallback["parentDept"],
             "childDept": fallback["childDept"],
@@ -97,12 +104,25 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
         }
 
     child = (ai_result.get("childDept", "") or "").strip()
-    if child not in {d["childDept"] for d in first_visit_depts} and "/" in child:
+    if child not in {d["childDept"] for d in candidate_depts} and "/" in child:
         child = child.split("/")[-1].strip()
 
     confidence_ai = float(ai_result.get("confidence", 0.5))
     coverage = coverage_count.get(child, 0) / total_symptoms
     confidence = round(0.5 * confidence_ai + 0.5 * coverage, 2)
+
+    # 除錯
+    trace_note("選科", {
+        "候選科別數": len(candidate_depts),
+        "關鍵字命中": dict(sorted(coverage_count.items(), key=lambda x: -x[1])),
+        "病患症狀總數": total_symptoms,
+        "AI 自報信心": confidence_ai,
+        "關鍵字覆蓋度": f"{coverage_count.get(child, 0)}/{total_symptoms} = {round(coverage, 2)}",
+        "最終信心": f"0.5×{confidence_ai} + 0.5×{round(coverage, 2)} = {confidence}",
+        "AI 選的科": f"{ai_result.get('parentDept', '')} / {child}",
+        "AI 給的備選": ai_result.get("alternatives", []),
+    })
+    #
 
     department_result = DepartmentResult(
         parentDept=ai_result.get("parentDept", ""),
@@ -111,7 +131,7 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
         reason=ai_result.get("reason", []),
     )
 
-    valid_children = {d["childDept"] for d in first_visit_depts}
+    valid_children = {d["childDept"] for d in candidate_depts}
     alt_fallbacks = []
     seen = {child}
     for alt in ai_result.get("alternatives", []):
@@ -121,7 +141,7 @@ def recommend_department(patient_input: PatientInput) -> tuple[DepartmentResult,
         if alt_child not in valid_children or alt_child in seen:
             continue
         seen.add(alt_child)
-        alt_parent = next((d["parentDept"] for d in first_visit_depts if d["childDept"] == alt_child), "")
+        alt_parent = next((d["parentDept"] for d in candidate_depts if d["childDept"] == alt_child), "")
         alt_fallbacks.append(FallbackDepartment(
             parentDept=alt_parent,
             childDept=alt_child,
