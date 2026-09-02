@@ -74,6 +74,7 @@
     display: flex; background: var(--soft); border-bottom: 1px solid var(--line);
     padding: 0 6px; overflow-x: auto; overflow-y: hidden;
   }
+  .steps[hidden] { display: none; }
   .steps > div {
     flex: 1 1 0; min-width: 92px; text-align: center; padding: 11px 6px 9px;
     font-size: 12.5px; color: var(--ink-3); position: relative; white-space: nowrap;
@@ -157,8 +158,17 @@
   @media (min-width: 560px) { .modes { grid-template-columns: repeat(3, 1fr); } }
   .mode {
     font-family: inherit; background: #fff; border: 2px solid var(--brand-line);
-    border-radius: 12px; padding: 30px 16px; cursor: pointer; transition: .14s;
-    color: var(--brand); font-size: 26px; font-weight: 700; letter-spacing: 4px;
+    border-radius: 12px; padding: 24px 18px 20px; cursor: pointer; transition: .14s;
+    text-align: center; display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  .mode .t {
+    display: block; color: var(--brand);
+    font-size: 26px; font-weight: 700; letter-spacing: 4px;
+  }
+  .mode .d {
+    display: block; color: var(--ink-2); text-align: left;
+    font-size: 12.5px; font-weight: 400; letter-spacing: 0;
+    line-height: 1.65; margin-top: 12px;
   }
   .mode:hover { background: var(--brand-tint); border-color: var(--brand); transform: translateY(-2px); }
 
@@ -328,10 +338,20 @@
       <h2 class="q">請問您這次的就診類別？</h2>
       <p class="sub">不同類別的掛號名額不同，系統會分開查詢。</p>
       <div class="modes">
-        <button class="mode" data-mode="初診">初診</button>
-        <button class="mode" data-mode="複診">複診</button>
-        <button class="mode" data-mode="回診">回診</button>
+        <button class="mode" data-mode="初診">
+          <span class="t">初診</span>
+          <span class="d">初次至本院就醫者，即為初診。</span>
+        </button>
+        <button class="mode" data-mode="複診">
+          <span class="t">複診</span>
+          <span class="d">凡曾於本院就醫、具有病歷號者，即為複診。</span>
+        </button>
+        <button class="mode" data-mode="回診">
+          <span class="t">回診</span>
+          <span class="d">已知要看的科別與醫師，不使用推薦科別與醫師功能。</span>
+        </button>
       </div>
+      <p class="footnote">掛號請至臺北榮總行動就醫服務APP，本網站僅提供就診科別與醫師門診時段的建議。</p>
     </section>
 
     <section id="sDept" hidden>
@@ -504,7 +524,8 @@
 <script>
 const $ = id => document.getElementById(id);
 const SEP = "　";
-const DAYS = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
+const DAYS = ["週一", "週二", "週三", "週四", "週五", "週六"];
+const WEEKDAY_NAMES = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
 const SESS = [["早上", "08:30–12:00"], ["下午", "13:30–17:00"], ["夜診", "18:00–21:00"]];
 const SEC = { 0: "s0", D: "sDept", 1: "s1", 2: "s2", Q: "s2q", 3: "s3", 4: "s4", 9: "s9" };
 
@@ -551,6 +572,8 @@ function show(k) {
       else if (i + 1 < step) d.className = "done";
       $("steps").appendChild(d);
     });
+  } else {
+    $("steps").innerHTML = "";
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -850,7 +873,7 @@ function restart() {
 
 function weekdayOf(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
-  return isNaN(d) ? "" : DAYS[(d.getDay() + 6) % 7];
+  return isNaN(d) ? "" : WEEKDAY_NAMES[(d.getDay() + 6) % 7];
 }
 function sessionRange(name) {
   const hit = SESS.find(e => e[0] === name);
@@ -900,6 +923,7 @@ function renderRecommendation(rec) {
   }
 
   const showScore = mode !== "回診";
+  const isTimePriority = showScore && pick("pref") === "時間優先";
   const head = el("div", "listhead");
   head.appendChild(el("h3", null, "為您找到 " + items.length + " 個可掛號的門診"));
   head.appendChild(el("span", null,
@@ -915,7 +939,9 @@ function renderRecommendation(rec) {
     const info = el("div", "dinfo");
     const name = el("div", "dname", it.doctor);
     name.appendChild(el("span", "sub2", it.childDept));
-    if (i === 0 && showScore && it.score >= 0.7) name.appendChild(el("span", "pill", "最對症"));
+    if (i === 0 && showScore && (isTimePriority || it.score >= 0.7)) {
+      name.appendChild(el("span", "pill", isTimePriority ? "最早門診" : "最對症"));
+    }
     info.appendChild(name);
 
     const when = el("div", "dwhen");
@@ -949,8 +975,8 @@ function renderRecommendation(rec) {
   box.appendChild(cards);
 
   box.appendChild(el("p", "footnote",
-    (showScore ? "專長分 70 以上才會標示「專長相符」。" : "") +
-    "掛號請至榮總官方系統，本頁僅提供就診科別與時段的建議。"));
+    "專長分70以上才會標示「專長相符」。" +
+    "掛號請至臺北榮總行動就醫服務APP，本頁僅提供就診科別與醫師門診時段的建議。"));
 }
 
 function renderDebug() {
