@@ -63,6 +63,7 @@
   .body { flex: 1; display: flex; overflow: hidden; }
   main { flex: 1; overflow-y: auto; }
   .shell { max-width: 880px; margin: 0 auto; padding: 22px 18px 60px; }
+  .shell:has(#s0:not([hidden])) { max-width: 1100px; }
 
   .app {
     background: var(--card); border: 1px solid var(--line);
@@ -108,6 +109,11 @@
   .field .hint { font-weight: 400; color: var(--ink-3); font-size: 12.5px; margin-left: 6px; }
   .field .hint.blk { display: block; margin: 1px 0 0; line-height: 1.55; }
   .field .assist { font-size: 12.5px; color: var(--ink-3); margin: 9px 0 7px; }
+  .field.invalid > label { color: var(--crit); }
+  .field.invalid input { border-color: var(--crit); box-shadow: 0 0 0 3px rgba(180, 35, 24, .12); }
+  .field.invalid .opts { outline: 1px solid var(--crit); outline-offset: 5px; border-radius: 8px; }
+  .field-error { display: none; color: var(--crit); font-size: 12.5px; margin: 7px 0 0; }
+  .field.invalid .field-error { display: block; }
 
   input[type=text], input[type=number], select, textarea {
     width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
@@ -171,6 +177,25 @@
     line-height: 1.65; margin-top: 12px;
   }
   .mode:hover { background: var(--brand-tint); border-color: var(--brand); transform: translateY(-2px); }
+
+  .visit-notice {
+    margin-bottom: 22px; padding: 18px 20px;
+    background: var(--brand-tint); border: 1px solid var(--brand-line); border-radius: 10px;
+  }
+  .visit-notice h3 { color: var(--brand-dark); font-size: 16px; margin-bottom: 10px; }
+  .visit-notice dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; font-size: 14px; }
+  .visit-notice dt { font-weight: 700; color: var(--brand-dark); }
+  .visit-notice dd { margin: 0; color: var(--ink-2); }
+  .visit-notice strong { color: var(--ink); }
+  .visit-notice .note {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--brand-line);
+    font-size: 13px; color: var(--ink-2);
+  }
+  @media (max-width: 560px) {
+    .visit-notice { padding: 15px; }
+    .visit-notice dl { grid-template-columns: 1fr; gap: 4px; }
+    .visit-notice dt:not(:first-child) { margin-top: 8px; }
+  }
 
   .gridwrap { overflow-x: auto; padding-bottom: 4px; }
   table.slots { border-collapse: separate; border-spacing: 5px; min-width: 480px; }
@@ -336,34 +361,51 @@
 
     <section id="s0">
       <h2 class="q">請問您這次的就診類別？</h2>
-      <p class="sub">不同類別的掛號名額不同，系統會分開查詢。</p>
+      <p class="sub">請先閱讀就診類別說明，再選擇適合您的服務。</p>
+      <aside class="visit-notice" aria-labelledby="visitNoticeTitle">
+        <h3 id="visitNoticeTitle">就診前注意事項｜初診、複診、查詢門診怎麼選？</h3>
+        <dl>
+          <dt>初診</dt>
+          <dd><strong>第一次到本院就醫。</strong>可使用系統評估症狀，了解適合掛號的科別與醫師。</dd>
+          <dt>複診</dt>
+          <dd><strong>曾在本院就醫且有病歷號，即使第一次看某科仍屬複診。</strong>可使用系統評估症狀，了解適合掛號的科別與醫師。</dd>
+          <dt>查詢門診</dt>
+          <dd><strong>只需了解門診班表，</strong>可查詢醫師的看診日期與時段。不額外提供科別與醫師推薦。</dd>
+        </dl>
+        <div class="note">
+          <ol style="padding-left: 1.5em;">
+            <li>同一門診的初診與複診掛號名額不同。</li>
+            <li>初診不包含大我門診；大我門診僅限複診。</li>
+          </ol>
+        </div>
+      </aside>
       <div class="modes">
         <button class="mode" data-mode="初診">
           <span class="t">初診</span>
-          <span class="d">初次至本院就醫者，即為初診。</span>
+          <span class="d">首次到本院就醫<br>填寫症狀，取得科別與醫師時段建議。</span>
         </button>
         <button class="mode" data-mode="複診">
           <span class="t">複診</span>
-          <span class="d">凡曾於本院就醫、具有病歷號者，即為複診。</span>
+          <span class="d">曾在本院就醫，已有病歷號<br>填寫症狀，取得科別與醫師時段建議。</span>
         </button>
-        <button class="mode" data-mode="回診">
-          <span class="t">回診</span>
-          <span class="d">已知要看的科別與醫師，不使用推薦科別與醫師功能。</span>
+        <button class="mode" data-mode="查詢門診">
+          <span class="t">查詢門診</span>
+          <span class="d">只需了解門診班表<br>查詢醫師的看診日期與時段。不額外提供推薦。</span>
         </button>
       </div>
       <p class="footnote">掛號請至臺北榮總行動就醫服務APP，本網站僅提供就診科別與醫師門診時段的建議。</p>
     </section>
 
     <section id="sDept" hidden>
-      <h2 class="q">請問您這次要回診哪一科？</h2>
-      <p class="sub">請先選科別分類，再選要回診的科別。</p>
+      <h2 class="q">請問您想查詢哪一科的門診？</h2>
+      <p class="sub">請先選科別分類，再選想查詢的科別。</p>
       <div class="row2">
         <div class="field">
           <label for="parentSel">科別分類</label>
           <select id="parentSel"><option value="">載入中…</option></select>
         </div>
         <div class="field">
-          <label for="childSel">要回診的科別</label>
+          <label for="childSel">想查詢的科別</label>
           <select id="childSel" disabled><option value="">請先選左邊</option></select>
         </div>
       </div>
@@ -399,9 +441,10 @@
       <h2 class="q">請描述您的症狀</h2>
       <p class="sub">填寫越完整，推薦的醫師越準確。</p>
 
-      <div class="field">
+      <div class="field" id="symField">
         <label for="sym">主要症狀</label>
         <input type="text" id="sym" placeholder="例如：肚子痛">
+        <p class="field-error">請填寫主要症狀。</p>
       </div>
 
       <div class="row2">
@@ -409,27 +452,30 @@
           <label for="part">部位<span class="hint">不清楚部位可留空</span></label>
           <input type="text" id="part" placeholder="例如：右下腹">
         </div>
-        <div class="field">
+        <div class="field" id="durField">
           <label for="dur">持續多久</label>
           <input type="text" id="dur" placeholder="例如：2天、一個禮拜">
+          <p class="field-error">請填寫症狀持續多久。</p>
         </div>
       </div>
 
       <div class="row2">
-        <div class="field">
+        <div class="field" id="sevField">
           <label>嚴重程度</label>
           <div class="opts" id="sev">
             <button class="opt" aria-pressed="false">輕微</button>
             <button class="opt" aria-pressed="false">中等</button>
             <button class="opt" aria-pressed="false">劇烈</button>
           </div>
+          <p class="field-error">請選擇嚴重程度。</p>
         </div>
-        <div class="field">
+        <div class="field" id="onsetField">
           <label>怎麼開始的</label>
           <div class="opts" id="onset">
             <button class="opt" aria-pressed="false">突然開始</button>
             <button class="opt" aria-pressed="false">慢慢變嚴重</button>
           </div>
+          <p class="field-error">請選擇症狀怎麼開始。</p>
         </div>
       </div>
 
@@ -556,7 +602,7 @@ function show(k) {
   $(SEC[k]).hidden = false;
   $("err").hidden = true;
 
-  const back = mode === "回診";
+  const back = mode === "查詢門診";
   const flow = back ? FLOW_BACK : FLOW_CHAT;
   let step = STEP_OF[k];
   if (back && step) step = step === 1 ? 1 : step - 1;
@@ -625,8 +671,8 @@ document.querySelectorAll(".mode").forEach(b => {
     $("badge").textContent = mode;
     $("badge").hidden = false;
     $("restartBtn").hidden = false;
-    $("prefField").hidden = mode === "回診";
-    if (mode === "回診") { loadDepartments(); show("D"); }
+    $("prefField").hidden = mode === "查詢門診";
+    if (mode === "查詢門診") { loadDepartments(); show("D"); }
     else show(1);
   };
 });
@@ -641,7 +687,12 @@ function one(group, btn) {
 }
 ["sex", "sev", "onset", "pref"].forEach(g => {
   $(g).querySelectorAll(".opt").forEach(b => {
-    b.onclick = () => { one(g, b); if (g === "sex") checkBasic(); };
+    b.onclick = () => {
+      one(g, b);
+      if (g === "sex") checkBasic();
+      if (g === "sev") setFieldInvalid("sevField", false);
+      if (g === "onset") setFieldInvalid("onsetField", false);
+    };
   });
 });
 
@@ -662,6 +713,24 @@ function checkBasic() {
   $("b1").disabled = !ok;
 }
 $("age").oninput = checkBasic;
+
+function setFieldInvalid(fieldId, invalid) {
+  $(fieldId).classList.toggle("invalid", invalid);
+}
+
+function validateSymptomForm() {
+  const missing = {
+    symField: !val("sym"),
+    durField: !val("dur"),
+    sevField: !pick("sev"),
+    onsetField: !pick("onset"),
+  };
+  Object.entries(missing).forEach(([fieldId, invalid]) => setFieldInvalid(fieldId, invalid));
+  return !Object.values(missing).some(Boolean);
+}
+
+$("sym").oninput = () => setFieldInvalid("symField", !val("sym"));
+$("dur").oninput = () => setFieldInvalid("durField", !val("dur"));
 
 (function buildGrid() {
   let h = "<tr><th></th>" + DAYS.map(d => "<th>" + d + "</th>").join("") + "</tr>";
@@ -748,7 +817,10 @@ $("b1").onclick = async () => {
 };
 
 $("b2").onclick = async () => {
-  if (!val("sym")) { fail("請至少填寫主要症狀。"); return; }
+  if (!validateSymptomForm()) {
+    fail("請完成紅框標示的必填欄位。");
+    return;
+  }
   const text = [
     "1." + val("sym"),
     "2." + (val("part") || "無"),
@@ -811,14 +883,14 @@ function afterSymptoms(data) {
   $("askText").focus();
 }
 
-$("b3back").onclick = () => show(mode === "回診" ? "D" : (history.length > 2 ? "Q" : 2));
+$("b3back").onclick = () => show(mode === "查詢門診" ? "D" : (history.length > 2 ? "Q" : 2));
 
 $("b3").onclick = async () => {
   const slots = chosenSlots();
   const doc = val("doc") || "不限";
   busy(true, $("b3"), "送出，開始推薦");
   try {
-    if (mode === "回診") {
+    if (mode === "查詢門診") {
       const text = "1." + (slots.join("、") || "不限") + SEP + "2." + doc;
       const data = await post("/api/followup", { dept: followupDept, preference_answer: text });
       lastDebug = data.debug;
@@ -855,6 +927,7 @@ function restart() {
   lastDebug = null;
   document.querySelectorAll("input, textarea").forEach(i => { i.value = ""; });
   document.querySelectorAll("[aria-pressed]").forEach(b => b.setAttribute("aria-pressed", "false"));
+  document.querySelectorAll(".field.invalid").forEach(f => f.classList.remove("invalid"));
   $("pref").querySelector(".opt").setAttribute("aria-pressed", "true");
   $("childSel").innerHTML = '<option value="">請先選左邊</option>';
   $("childSel").disabled = true;
@@ -888,7 +961,7 @@ function renderRecommendation(rec) {
   if (rec.department) {
     const d = rec.department;
     const card = el("div", "dept");
-    card.appendChild(el("div", "lbl", mode === "回診" ? "回診科別" : "建議科別"));
+    card.appendChild(el("div", "lbl", mode === "查詢門診" ? "查詢科別" : "建議科別"));
     const name = el("div", "name", d.childDept);
     name.appendChild(el("small", null, d.parentDept));
     card.appendChild(name);
@@ -922,7 +995,7 @@ function renderRecommendation(rec) {
     return;
   }
 
-  const showScore = mode !== "回診";
+  const showScore = mode !== "查詢門診";
   const isTimePriority = showScore && pick("pref") === "時間優先";
   const head = el("div", "listhead");
   head.appendChild(el("h3", null, "為您找到 " + items.length + " 個可掛號的門診"));
