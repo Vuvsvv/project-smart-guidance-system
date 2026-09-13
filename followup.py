@@ -20,10 +20,11 @@ def recommend_followup(request: FollowupRequest) -> RecommendationResult:
     all_rows = [r for r in all_rows if _session_open(r)]
 
     doctor_pref = (request.preferences.doctor_preference or "不限").strip()
+    has_doctor = bool(doctor_pref and doctor_pref != "不限")
     feasible, _ = select_feasible(all_rows, slots, doctor_pref)
     recommendations = _build_items(feasible, department_result, {}, {}, slots,
                                    specialty_priority=False, sort_by_date=True,
-                                   doctor_pref=doctor_pref)
+                                   doctor_pref=doctor_pref, limit=5 if has_doctor else None)
 
     fallback = [] if all_rows else [FallbackDepartment(parentDept=parent, childDept=child, reason="近期無可掛號")]
 

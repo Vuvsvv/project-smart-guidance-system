@@ -370,7 +370,7 @@
           <dt>複診</dt>
           <dd><strong>曾在本院就醫且有病歷號，即使第一次看某科仍屬複診。</strong>可使用系統評估症狀，了解適合掛號的科別與醫師。</dd>
           <dt>查詢門診</dt>
-          <dd><strong>只需了解門診班表，</strong>可查詢醫師的看診日期與時段。不額外提供科別與醫師推薦。</dd>
+          <dd><strong>只需了解門診班表，</strong>可依方便時段查詢指定科別的可掛號門診，並可指定醫師篩選；不額外提供科別或醫師推薦。</dd>
         </dl>
         <div class="note">
           <ol style="padding-left: 1.5em;">
@@ -390,7 +390,7 @@
         </button>
         <button class="mode" data-mode="查詢門診">
           <span class="t">查詢門診</span>
-          <span class="d">只需了解門診班表<br>查詢醫師的看診日期與時段。不額外提供推薦。</span>
+          <span class="d">只需了解門診班表<br>依方便時段查詢指定科別的可掛號門診，<br>並可指定醫師篩選。不額外提供推薦。</span>
         </button>
       </div>
       <p class="footnote">掛號請至臺北榮總行動就醫服務APP，本網站僅提供就診科別與醫師門診時段的建議。</p>
@@ -578,6 +578,12 @@ const SEC = { 0: "s0", D: "sDept", 1: "s1", 2: "s2", Q: "s2q", 3: "s3", 4: "s4",
 const FLOW_CHAT = [["1", "基本資料"], ["2", "症狀描述"], ["3", "就診時段"], ["4", "推薦結果"]];
 const FLOW_BACK = [["1", "選擇科別"], ["2", "就診時段"], ["3", "推薦結果"]];
 const STEP_OF = { D: 1, 1: 1, 2: 2, Q: 2, 3: 3, 4: 4 };
+const CLARIFICATION_QUESTIONS = {
+  symptom: "【主要症狀】您哪裡不舒服？（例如：肚子痛、頭暈、咳嗽）",
+  body_part: "【部位】不舒服的部位在哪裡？（例如：右下腹、後腦杓、胸口；說不出來或沒有特定部位請填「無」）",
+  duration: "【持續多久】這個症狀持續多久了？（例如：2天、一週）",
+  accompanying_symptoms: "【伴隨症狀】還有沒有其他不舒服？（例如：發燒、拉肚子、想吐；沒有請填「無」）"
+};
 
 let mode = "初診";
 let triageCase = null;
@@ -876,8 +882,8 @@ function afterSymptoms(data) {
     return;
   }
 
-  const ask = (data.reply || "請再補充一些資訊。")
-    .replace(/^了解[，,、]\s*/, "");
+  const field = triageCase.triage.next_question;
+  const ask = CLARIFICATION_QUESTIONS[field] || "請回上一步確認症狀資料。";
   $("askChat").appendChild(el("div", "bub bot", ask));
   show("Q");
   $("askText").focus();
@@ -1048,7 +1054,7 @@ function renderRecommendation(rec) {
   box.appendChild(cards);
 
   box.appendChild(el("p", "footnote",
-    "專長分70以上才會標示「專長相符」。" +
+    (showScore ? "專長分70以上才會標示「專長相符」。" : "") +
     "掛號請至臺北榮總行動就醫服務APP，本頁僅提供就診科別與醫師門診時段的建議。"));
 }
 

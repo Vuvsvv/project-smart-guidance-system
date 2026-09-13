@@ -30,6 +30,7 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
 
 
     current_input = triage_case.patient_input
+    pending_field = triage_case.triage.next_question or "無"
 
     prompt = f"""你是台北榮民總醫院的分診助理，正在透過對話收集病患症狀。
 
@@ -38,6 +39,12 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
 
 目前已收集到的症狀資料：
 {current_input.model_dump_json(indent=2)}
+
+目前待補答欄位：
+{pending_field}
+
+若上一輪指定要補答某個欄位，病患在補充問題頁面輸入的最新文字，就是該欄位的新答案。
+請用此答案取代該欄位原本無效的內容，再重新檢查全部症狀資料。
 
 你的任務：
 1. 根據對話更新症狀資料
@@ -88,22 +95,42 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
 【資料收集原則】
 1. 病患已先填過「症狀表單」，會在一則訊息裡「照編號」一次答完 1～6，編號對應欄位如下：
    1→symptom、2→body_part、3→duration、4→severity、5→onset、6→accompanying_symptoms。
-   請照編號對應吸收，不要重複問表單已經答過的；只有真的缺欄位時才追問。
+   請照編號對應吸收，不要重複問表單已經答過的；只有真的缺欄位，或欄位內容不符合該欄位語意時才追問。
 2. 足夠條件：必須要有 symptom + body_part + duration + severity（問病患「輕微／中等／劇烈」）+ onset（問「症狀是突然開始，還是慢慢變嚴重」）+
   accompanying_symptoms。
-  (1) body_part：病患答「無」「不知道」「說不清楚」，或症狀本來就沒有特定部位
-    （如發燒、全身無力、疲倦、頭暈）→ 算已回答，body_part 填 null，不要再追問。
-  (2) accompanying_symptoms：病患答「無」也算已回答，填空陣列 [] 即可。
+  (1) body_part：病患答「無」「不知道」「不清楚」→ 算已回答，body_part 填 null，不要再追問。
+  (2) accompanying_symptoms：只有病患原始回答明確表示「無」時，才算已回答並填空陣列 []。
+    若病患在第 6 題實際填了其他內容，但內容無法辨識為症狀，不得自行改寫為空陣列 []；必須追問該欄。
 3. 不夠 → is_complete=false，只問「下一個」最重要的問題。
 4. 足夠 → is_complete=true。
 5. 問法：每次只問一題、用白話讓長輩聽得懂、已答過的不重複問（病患可能一次答多項）。
+
+【欄位內容不合理的處理】
+欄位雖然有填寫，但內容無法合理對應該欄位的語意時，視為該欄無效，必須追問該欄。
+請依內容語意判斷，不得只依特定關鍵字、固定格式或語言判斷。
+
+- symptom 必須能辨識為主要不適、疾病徵象或症狀描述；若無法辨識，填空字串 ""，不得填 null。
+- body_part 必須能辨識為身體部位；「無」、「不知道」、「不清楚」視為有效。
+- duration 必須能辨識為症狀持續的時間長度或時間範圍。
+- accompanying_symptoms 必須能辨識為其他症狀；只有原始回答明確為「無」時，才可填空陣列 [] 並視為有效。
+- 不得因內容使用英文、數字或中英混合就直接判定無效；應先判斷內容是否仍可合理理解。
+
+若多個欄位不合理，每次只能追問一個最重要的欄位。
+追問優先順序：symptom → duration → body_part → accompanying_symptoms。
+
+需要追問時：
+- need_more_info 必須為 true。
+- is_complete 必須為 false。
+- next_question 必須填 symptom、body_part、duration、accompanying_symptoms 其中一個欄位代號。
+- 不得在 next_question 填問題文字。
+- 必須輸出完整合法 JSON，不得輸出空白。
 
 【回覆格式規定】
 1. TTAS 判斷為「重」  (high)：reply=「您的狀況可能屬於緊急情況，請立即前往急診就醫。（症狀摘要一句）」
   例如：您的狀況可能屬於緊急情況，請立即前往急診就醫。（持續胸痛冒冷汗）
   不論資料是否齊全，立刻設 is_complete=true、warning_required=true，停止追問、不要再問任何問題。
-2. 還要繼續問：reply 格式必須是「了解，[下一個問題]」。
-  例如：「了解，請問已經持續幾天了？」
+2. 還要繼續問時，reply 填「資料需要補充。」即可。
+  實際要顯示給病患的固定問題由前端依 next_question 處理。
 3. 資料收集完成且TTAS為「中」(medium)：reply 格式必須是「[症狀摘要，一句話]，建議您盡早就醫」
   例如：「無法控制的嘔吐一天、中等程度，建議您盡早就醫」（此例對應第三級「無法控制的腹瀉或嘔吐」）
 4. 資料收集完成且TTAS為「低」(low)：reply 格式必須是「[症狀摘要，一句話]」
@@ -128,7 +155,7 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
     "warning_required": true 或 false,
     "warning_message": "警告訊息或 null",
     "need_more_info": true 或 false,
-    "next_question": "下一個要問的問題（need_more_info=true 時必填，false 時填 null）"
+    "next_question": "need_more_info=true 時，填 symptom、body_part、duration、accompanying_symptoms 其中一個；false 時填 null"
   }},
   "conversation_state": {{
     "stage": "collecting",
@@ -144,7 +171,10 @@ def collect_symptoms(chat_request: ChatRequest) -> TriageResult:
     try:
         ai_result = json.loads(response)
         if "patient_input" in ai_result:
-            new_pi = PatientInput(**ai_result["patient_input"])
+            patient_data = ai_result["patient_input"]
+            if patient_data.get("symptom") is None:
+                patient_data["symptom"] = ""
+            new_pi = PatientInput(**patient_data)
             new_pi.age = triage_case.patient_input.age       
             new_pi.gender = triage_case.patient_input.gender
             triage_case.patient_input = new_pi

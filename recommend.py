@@ -13,7 +13,7 @@ from scoring import score_specialties_with_ai, _row_tag, _has_specialty
 
 
 def _build_items(rows, department_result, tag_scores, matched_specialties, slots,
-                 specialty_priority=True, sort_by_date=False, doctor_pref=""):
+                 specialty_priority=True, sort_by_date=False, doctor_pref="", limit=5):
     has_doctor = bool(doctor_pref and doctor_pref != "不限")
     items = []
     for row in rows:
@@ -22,7 +22,7 @@ def _build_items(rows, department_result, tag_scores, matched_specialties, slots
 
         if has_doctor:
             reasons.append("符合您指定醫師" if doctor_pref in row["doctor"]
-                           else "您指定的醫師近期無號，改推同科其他醫師")
+                           else "您指定的醫師不在此科或近期無號，改推同科其他醫師的門診")
         elif f_tag >= 0.7:
             matched = matched_specialties.get(row["specialty_tags"]) or row["specialty_tags"]
             reasons.append(f"醫師專長相符（{matched}）")
@@ -57,7 +57,7 @@ def _build_items(rows, department_result, tag_scores, matched_specialties, slots
     else:
         items.sort(key=lambda x: (*_when(x), -x.score))
 
-    return items[:5]
+    return items if limit is None else items[:limit]
 
 
 def _open_rows(child_dept: str, visit_type: str = "初診") -> list:
