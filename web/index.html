@@ -363,13 +363,13 @@
       <h2 class="q">請問您這次的就診類別？</h2>
       <p class="sub">請先閱讀就診類別說明，再選擇適合您的服務。</p>
       <aside class="visit-notice" aria-labelledby="visitNoticeTitle">
-        <h3 id="visitNoticeTitle">就診前注意事項｜初診、複診、查詢門診怎麼選？</h3>
+        <h3 id="visitNoticeTitle">就診前注意事項｜初診、複診、快速查詢怎麼選？</h3>
         <dl>
           <dt>初診</dt>
           <dd><strong>第一次到本院就醫。</strong>可使用系統評估症狀，了解適合掛號的科別與醫師。</dd>
           <dt>複診</dt>
           <dd><strong>曾在本院就醫且有病歷號，即使第一次看某科仍屬複診。</strong>可使用系統評估症狀，了解適合掛號的科別與醫師。</dd>
-          <dt>查詢門診</dt>
+          <dt>快速查詢</dt>
           <dd><strong>只需了解門診班表，</strong>可依方便時段查詢指定科別的可掛號門診，並可指定醫師篩選；不額外提供科別或醫師推薦。</dd>
         </dl>
         <div class="note">
@@ -389,7 +389,7 @@
           <span class="d">曾在本院就醫，已有病歷號<br>填寫症狀，取得科別與醫師時段建議。</span>
         </button>
         <button class="mode" data-mode="查詢門診">
-          <span class="t">查詢門診</span>
+          <span class="t">快速查詢</span>
           <span class="d">只需了解門診班表<br>依方便時段查詢指定科別的可掛號門診，<br>並可指定醫師篩選。不額外提供推薦。</span>
         </button>
       </div>
@@ -674,7 +674,7 @@ async function sendChat(idx, text) {
 document.querySelectorAll(".mode").forEach(b => {
   b.onclick = () => {
     mode = b.dataset.mode;
-    $("badge").textContent = mode;
+    $("badge").textContent = b.querySelector(".t").textContent;
     $("badge").hidden = false;
     $("restartBtn").hidden = false;
     $("prefField").hidden = mode === "查詢門診";
